@@ -1,0 +1,43 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Редакторы и ОС
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Секреты и переменные окружения
+.env
+.env.*
+!.env.example
+*.key
+
+# Локально загруженные веса и наборы данных
+models/
+datasets/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.parquet
+*.arrow
+
+# Генерируемые артефакты, временные файлы и журналы
+experiments/runs/
+results/raw/
+results/derived/
+results/figures/
+*.log
+*.tmp
+*.temp
+*.bak
