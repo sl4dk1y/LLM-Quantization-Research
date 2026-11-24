@@ -1,0 +1,43 @@
+{
+  "ready_for_execution": false,
+  "protocol_version": null,
+  "protocol_hash": null,
+  "campaign_id": null,
+  "max_attempts": 2,
+  "cells": [
+    {
+      "block_id": "P1",
+      "priority": 1,
+      "comparison_series": "controlled",
+      "model_id": "Qwen3-4B",
+      "model_revision": null,
+      "gguf_repo_id": null,
+      "gguf_revision": null,
+      "gguf_sha256": null,
+      "quantization": "F16",
+      "kv_cache": "f16",
+      "dataset_id": "MERA",
+      "dataset_revision": null,
+      "dataset_sha256": null,
+      "split": "test",
+      "task": "MathLogicQA",
+      "context_length": 4096,
+      "workload_id": "quality",
+      "mode": "held_out",
+      "generation_seed": 42,
+      "generation_config": null,
+      "tokenizer_revision": null,
+      "chat_template_hash": null,
+      "reasoning_mode": null,
+      "llama_cpp_commit": null,
+      "scorer_version": null,
+      "item_ids": [],
+      "platforms": [
+        {"platform_id": "apple-metal", "hardware_manifest_hash": null,
+         "runtime_version": null, "runtime_binary_sha256": null},
+        {"platform_id": "nvidia-cuda", "hardware_manifest_hash": null,
+         "runtime_version": null, "runtime_binary_sha256": null}
+      ]
+    }
+  ]
+}

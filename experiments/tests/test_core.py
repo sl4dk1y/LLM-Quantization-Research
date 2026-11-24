@@ -1,14 +1,17 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from quantbench.config import load_config, validate_config
 from quantbench.datasets import file_sha256, load_jsonl_dataset
-from quantbench.identity import attempt_id, config_id, observation_key
+from quantbench.identity import attempt_id, config_id, hardware_manifest_hash, observation_key, platform_observation_id
+from quantbench.platform import Metric, MetricStatus, validate_snapshot
 from quantbench.runtime import build_server_args
 from quantbench.safety import SafetyGuard, SafetyState
 from quantbench.sampling import select_items, validate_disjoint
 from quantbench.store import append_record, completed_observations, read_records
+import quantbench.store as store_module
 
 
 def fixture_config():
@@ -83,6 +86,29 @@ def test_invalid_jsonl_record_fails_closed(tmp_path):
         read_records(path)
 
 
+def test_jsonl_writer_completes_partial_os_writes(tmp_path, monkeypatch):
+    path = tmp_path / "partial.jsonl"
+    real_write = store_module.os.write
+
+    def short_write(fd, data):
+        return real_write(fd, data[:max(1, min(7, len(data)))])
+
+    monkeypatch.setattr(store_module.os, "write", short_write)
+    append_record(path, {"attempt_id": "partial", "observation_id": "obs-partial", "status": "complete"})
+    assert read_records(path)[0]["attempt_id"] == "partial"
+
+
+def test_jsonl_writer_serializes_concurrent_appends(tmp_path):
+    path = tmp_path / "concurrent.jsonl"
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda index: append_record(path, {"attempt_id": str(index),
+                                                         "observation_id": f"obs-{index}",
+                                                         "status": "complete"}), range(32)))
+    records = read_records(path)
+    assert len(records) == 32
+    assert len({row["attempt_id"] for row in records}) == 32
+
+
 def test_local_dataset_checks_hash_split_and_unique_ids(tmp_path):
     path = tmp_path / "dataset.jsonl"
     path.write_text('{"id":"1","split":"dev","question":"synthetic"}\n', encoding="utf-8")
@@ -107,9 +133,54 @@ def test_safety_guard_fails_closed_on_missing_metric_and_stops_at_threshold():
     assert guard.evaluate({}) == SafetyState.BLOCKED
     metrics = {"system_used_bytes": int(12 * 1024**3), "swap_delta_bytes": 0,
                "memory_pressure": {"category": "green"}, "thermal_state": "nominal",
-               "process_state": "running", "physical_footprint_bytes": 100}
-    assert guard.evaluate(metrics) == SafetyState.EMERGENCY_STOP
+               "process_state": "running", "physical_footprint_bytes": 100, "monotonic_time": 0}
+    assert guard.evaluate(metrics, now=0) == SafetyState.WARNING
+    assert guard.evaluate(metrics, now=5) == SafetyState.EMERGENCY_STOP
     assert not guard.allows_inference
+
+
+def test_safety_guard_ignores_transient_pressure_and_requires_recovery_window():
+    guard = SafetyGuard(recovery_window_s=10)
+    normal = {"system_used_bytes": 7 * 1024**3, "swap_delta_bytes": 0,
+              "memory_pressure": {"category": "green"}, "thermal_state": "nominal",
+              "process_state": "running", "physical_footprint_bytes": 100}
+    assert guard.evaluate({**normal, "monotonic_time": 1}, now=1) == SafetyState.RECOVERY
+    assert guard.evaluate({**normal, "monotonic_time": 11}, now=11) == SafetyState.SAFE
+    high = {**normal, "system_used_bytes": 11 * 1024**3}
+    assert guard.evaluate({**high, "monotonic_time": 12}, now=12) == SafetyState.WARNING
+    assert guard.evaluate({**normal, "monotonic_time": 14}, now=14) == SafetyState.RECOVERY
+    assert guard.evaluate({**normal, "monotonic_time": 24}, now=24) == SafetyState.SAFE
+
+
+@pytest.mark.parametrize("override", [
+    {"system_used_bytes": -1},
+    {"physical_footprint_bytes": float("nan")},
+    {"monotonic_time": -20},
+])
+def test_safety_guard_blocks_invalid_and_stale_metrics(override):
+    guard = SafetyGuard()
+    metrics = {"system_used_bytes": 1, "swap_delta_bytes": 0,
+               "memory_pressure": {"category": "green"}, "thermal_state": "nominal",
+               "process_state": "running", "physical_footprint_bytes": 100,
+               "monotonic_time": 10}
+    metrics.update(override)
+    assert guard.evaluate(metrics, now=20) == SafetyState.BLOCKED
+
+
+def test_platform_metric_status_and_unique_platform_observation_ids():
+    metrics = {"gpu_utilization": Metric("gpu_utilization", None, "%", MetricStatus.NOT_APPLICABLE,
+                                         "GPU отсутствует")}
+    assert validate_snapshot(metrics, {"gpu_utilization"}) == []
+    required_missing = {"thermal_state": Metric("thermal_state", None, None, MetricStatus.UNAVAILABLE, "нет источника")}
+    assert validate_snapshot(required_missing, {"thermal_state"})
+    manifest_hash = hardware_manifest_hash({"platform_id": "apple-metal", "gpu_model": None})
+    logical = observation_key({k: ("quality" if k == "mode" else "x") for k in [
+        "protocol_version", "protocol_hash", "config_id", "model_revision", "gguf_sha256", "quantization",
+        "kv_cache", "dataset_revision", "split", "task", "item_id", "context_length", "workload_id",
+        "mode", "generation_seed", "performance_repeat"]})
+    a = platform_observation_id(logical, "apple-metal", manifest_hash, "run-a", "try-a")
+    b = platform_observation_id(logical, "nvidia-cuda", manifest_hash, "run-b", "try-b")
+    assert a != b
 
 
 def test_config_rejects_bool_as_integer_and_bad_hash():

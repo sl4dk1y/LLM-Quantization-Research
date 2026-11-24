@@ -1,0 +1,23 @@
+{
+  "platform_id": "apple-metal",
+  "backend": "metal",
+  "runtime": {
+    "executable": "llama-server",
+    "host": "127.0.0.1",
+    "port": 8080,
+    "load_timeout_s": 120,
+    "request_timeout_s": 120
+  },
+  "hardware_manifest": {
+    "device_model": "MacBook Air M4",
+    "architecture": "arm64",
+    "unified_memory_bytes": 17179869184,
+    "os_version": null,
+    "llama_cpp_revision": null
+  },
+  "safety_profile": "apple-metal-preliminary",
+  "local_paths": {
+    "model_root": "<set-local-model-directory>",
+    "dataset_root": "<set-local-dataset-directory>"
+  }
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import http.client
 import socket
 import subprocess
 import threading
@@ -36,6 +37,7 @@ class LlamaServer:
         self.process: Any = None
         self._log = None
         self._request_lock = threading.Lock()
+        self._lifecycle_lock = threading.RLock()
 
     @property
     def base_url(self) -> str:
@@ -43,21 +45,27 @@ class LlamaServer:
         return f"http://{host}:{self.config['runtime']['port']}"
 
     def start(self) -> None:
-        if self.process is not None and self.process.poll() is None:
-            raise RuntimeErrorDetail("Экземпляр сервера уже запущен")
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._log = self.log_path.open("ab", buffering=0)
-        self.process = self._popen(build_server_args(self.config, self.model), stdin=subprocess.DEVNULL,
-                                   stdout=self._log, stderr=subprocess.STDOUT, shell=False, close_fds=True)
-        deadline = time.monotonic() + self.config["runtime"]["load_timeout_s"]
-        while time.monotonic() < deadline:
-            if self.process.poll() is not None:
-                raise RuntimeErrorDetail(f"llama-server завершился при старте; лог: {self.log_path}")
-            if self._ready():
-                return
-            time.sleep(0.25)
-        self.stop()
-        raise TimeoutError("Истёк тайм-аут готовности llama-server")
+        with self._lifecycle_lock:
+            if self.process is not None and self.process.poll() is None:
+                raise RuntimeErrorDetail("Экземпляр сервера уже запущен")
+            if self.process is not None or self._log is not None:
+                self.stop()
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._log = self.log_path.open("ab", buffering=0)
+            try:
+                self.process = self._popen(build_server_args(self.config, self.model), stdin=subprocess.DEVNULL,
+                                           stdout=self._log, stderr=subprocess.STDOUT, shell=False, close_fds=True)
+                deadline = time.monotonic() + self.config["runtime"]["load_timeout_s"]
+                while time.monotonic() < deadline:
+                    if self.process.poll() is not None:
+                        raise RuntimeErrorDetail(f"llama-server завершился при старте; лог: {self.log_path}")
+                    if self._ready():
+                        return
+                    time.sleep(0.25)
+                raise TimeoutError("Истёк тайм-аут готовности llama-server")
+            except BaseException:
+                self.stop()
+                raise
 
     def _ready(self) -> bool:
         try:
@@ -84,6 +92,8 @@ class LlamaServer:
             chunks: list[str] = []
             timings: dict[str, Any] = {}
             first_token_s = None
+            completed = False
+            finish_reason = None
             with urllib.request.urlopen(request, timeout=self.config["runtime"]["request_timeout_s"]) as response:
                 for raw_line in response:
                     if cancel is not None and cancel.is_set():
@@ -93,6 +103,7 @@ class LlamaServer:
                         continue
                     body = line[5:].strip()
                     if body == "[DONE]":
+                        completed = True
                         break
                     try:
                         event = json.loads(body)
@@ -102,35 +113,43 @@ class LlamaServer:
                         timings.update(event["timings"])
                     choices = event.get("choices") or []
                     if choices:
+                        finish_reason = choices[0].get("finish_reason") or finish_reason
                         text = choices[0].get("text", "")
                         if text:
                             if first_token_s is None:
                                 first_token_s = time.monotonic() - start
                             chunks.append(text)
+            if not completed:
+                raise RuntimeErrorDetail("Неполный streaming response от runtime: отсутствует [DONE]")
             return {"text": "".join(chunks), "ttft_s": first_token_s,
                     "request_wall_s": time.monotonic() - start, "timings": timings,
-                    "finish_reason": "stream_end"}
+                    "finish_reason": finish_reason or "stop"}
         except urllib.error.HTTPError as exc:
             body = exc.read(2048).decode("utf-8", "replace")
             raise RuntimeErrorDetail(f"llama-server HTTP {exc.code}: {body}") from exc
         except urllib.error.URLError as exc:
             raise RuntimeErrorDetail(f"Ошибка соединения с llama-server: {exc.reason}") from exc
+        except (TimeoutError, OSError) as exc:
+            raise RuntimeErrorDetail(f"Запрос к llama-server не завершён штатно: {exc}") from exc
+        except http.client.HTTPException as exc:
+            raise RuntimeErrorDetail(f"Неполное HTTP/SSE-соединение с llama-server: {exc}") from exc
         finally:
             self._request_lock.release()
 
     def stop(self, *, grace_s: float = 30) -> None:
-        process = self.process
-        if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=grace_s)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        self.process = None
-        if self._log is not None:
-            self._log.close()
-            self._log = None
+        with self._lifecycle_lock:
+            process = self.process
+            if process is not None and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=grace_s)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+            self.process = None
+            if self._log is not None:
+                self._log.close()
+                self._log = None
 
     def __enter__(self) -> "LlamaServer":
         self.start()

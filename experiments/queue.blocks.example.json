@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "ready_for_execution": false,
+  "protocol_version": "0.1-draft",
+  "platforms": ["apple-metal", "nvidia-cuda"],
+  "block_order": [
+    {"id": "P0", "priority": 0, "type": "pilot", "status": "needs_owner_protocol_lock", "separate_campaign": true},
+    {"id": "P1", "priority": 1, "type": "confirmatory_core", "models": ["Qwen3-4B"], "quantizations": ["F16", "Q8_0", "Q4_K_M"], "datasets": [{"id": "MERA", "tasks": ["MathLogicQA", "MultiQ"], "split": "test", "items": 200}], "contexts": [4096], "platforms": ["apple-metal", "nvidia-cuda"], "status": "requires_locked_artifacts_and_both_preflights"},
+    {"id": "P2", "priority": 2, "type": "quantization_extension", "models": ["Qwen3-4B"], "quantizations": ["Q6_K", "Q5_K_M"], "inherit_sampling_from": "P1", "status": "planned"},
+    {"id": "P3", "priority": 3, "type": "model_size", "models": ["Qwen3-1.7B", "Qwen3-8B"], "quantizations": "existing M2 admissible rows only", "inherit_sampling_from": "P1", "status": "conditional_on_preflight"},
+    {"id": "P4", "priority": 4, "type": "remaining_mera", "datasets": [{"id": "MERA", "tasks": ["ruOpenBookQA", "PARus"], "splits": "as specified in docs/experiment-matrix.md"}], "status": "planned"},
+    {"id": "P5", "priority": 5, "type": "libra_and_context", "models": ["Qwen3-4B"], "quantizations": ["F16", "Q6_K", "Q4_K_M"], "contexts": [4352, 8448, 16640], "dataset": "LIBRA Mini; task x context sample n=30", "status": "conditional_on_preflight"},
+    {"id": "P6", "priority": 6, "type": "validation_and_transfer", "models": ["Qwen3.5-4B"], "quantizations": ["F16", "Q6_K", "Q4_K_M"], "status": "validation_cohort; conditional_on_preflight"}
+  ],
+  "rules": ["Expand only explicit rows; never create the full cartesian product.", "Reuse a logical observation when all protocol fields match.", "Do not open a later priority until every job in the current priority is complete or explicitly excluded before results are reviewed.", "A Qwen3-1.7B fallback for P1 requires an addendum and does not replace Qwen3-4B in the full program.", "Pilot records remain in a separate campaign and are never pooled into confirmatory analysis."]
+}

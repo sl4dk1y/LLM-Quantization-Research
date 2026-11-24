@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import fcntl
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on Windows hosts
+    fcntl = None
+    import msvcrt
 import errno
 from pathlib import Path
 from typing import Any, Iterable
@@ -16,9 +20,18 @@ def append_record(path: str | Path, record: dict[str, Any]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     line = canonical_json(record) + "\n"
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    lock_fd = os.open(str(target) + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    except BaseException:
+        os.close(lock_fd)
+        raise
+    try:
+        if fcntl is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        else:
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            msvcrt.locking(lock_fd, msvcrt.LK_LOCK, 1)
         data = line.encode("utf-8")
         offset = 0
         while offset < len(data):
@@ -32,9 +45,14 @@ def append_record(path: str | Path, record: dict[str, Any]) -> None:
         os.fsync(fd)
     finally:
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            if fcntl is not None:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            else:
+                os.lseek(lock_fd, 0, os.SEEK_SET)
+                msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
         except OSError:
             pass
+        os.close(lock_fd)
         os.close(fd)
 
 

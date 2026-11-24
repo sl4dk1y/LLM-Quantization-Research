@@ -1,0 +1,29 @@
+{
+  "platform_id": "nvidia-cuda",
+  "backend": "cuda",
+  "ready_for_run": false,
+  "runtime": {
+    "executable": "<fill-after-runtime-check>",
+    "host": "127.0.0.1",
+    "port": 8080,
+    "load_timeout_s": 120,
+    "request_timeout_s": 120,
+    "gpu_layers": null
+  },
+  "hardware_manifest": {
+    "os_name": null,
+    "os_version": null,
+    "architecture": null,
+    "cpu_model": null,
+    "ram_bytes": null,
+    "gpu_model": null,
+    "vram_bytes": null,
+    "driver_version": null,
+    "llama_cpp_revision": null
+  },
+  "safety_profile": null,
+  "local_paths": {
+    "model_root": "<set-local-model-directory>",
+    "dataset_root": "<set-local-dataset-directory>"
+  }
+}

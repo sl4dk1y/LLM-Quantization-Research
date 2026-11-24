@@ -39,3 +39,7 @@ Compound key `(protocol version, model revision, quant, dataset revision, split,
 ## Контроли, необходимые до реализации
 
 До M3 проверить API metrics, semantics scorer и chat template на маленьком ручном наборе, file locking/append safety, resume key behavior, timeout/TERM path, process cleanup, output decoding и корректное прохождение текстового Qwen3.5 prompt. Эти проверки — будущие функциональные проверки стенда; это не запуск оценочного benchmark.
+
+## Дополнение M3.2
+
+Архитектура разделена на общий quantbench и минимальный `PlatformAdapter` для manifest, capabilities, backend args, resource snapshot и preflight. Подробности: [общий контракт](../experiments/quantbench/platform.py), [сравнение платформ](platform-comparison.md).

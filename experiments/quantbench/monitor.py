@@ -6,6 +6,7 @@ import datetime as dt
 import os
 import re
 import subprocess
+import time
 from typing import Any
 
 
@@ -30,6 +31,7 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
     timestamp = dt.datetime.now(dt.timezone.utc).isoformat()
     result: dict[str, Any] = {
         "timestamp": timestamp,
+        "monotonic_time": time.monotonic(),
         "platform": "macOS" if os.uname().sysname == "Darwin" else os.uname().sysname,
         "process_state": "unknown", "rss_bytes": None, "physical_footprint_bytes": None,
         "system_used_bytes": None, "memory_pressure": None, "swap_used_bytes": None,
@@ -44,6 +46,11 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
             result["missing"]["process_state"] = status.strip()
     else:
         result["missing"]["process"] = "no target pid supplied"
+    if os.uname().sysname == "Darwin":
+        from .platforms.macos import process_metrics
+        result.update(process_metrics(pid))
+        if pid is None:
+            result["physical_footprint_bytes"] = None
 
     code, vm = _command(["/usr/bin/vm_stat"])
     if code == 0:
@@ -76,7 +83,8 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
         result["swap_used_bytes"] = int(float(match.group(1)) * factor)
     else:
         result["missing"]["swap_used_bytes"] = swap.strip() or "sysctl unavailable/denied"
-    result["missing"]["thermal_state"] = "ProcessInfo thermalState API is not available in this Python implementation"
+    if result.get("thermal_state") is None:
+        result["missing"]["thermal_state"] = result.get("native_metrics_error", "native ProcessInfo collector unavailable")
     return result
 
 

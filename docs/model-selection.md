@@ -68,3 +68,7 @@ Qwen3.5-4B и Gemma4 E2B/E4B могут дать дополнительную п
 Для спецификации предлагается `ggml-org/llama.cpp` nightly `b12675`, commit prefix `c212d25`, релиз включает macOS Apple Silicon arm64 артефакт. Tag и build фиксируются вместе с полной ревизией, binary SHA-256, build flags и Metal startup log. Официальный conversion tree содержит регистрацию архитектуры Qwen3.5; это документальное подтверждение пути, а не фактический запуск на MacBook Air M4. Источники: [release snapshot](https://github.com/ggml-org/llama.cpp/releases/tag/b12675), [конвертер Qwen](https://github.com/ggml-org/llama.cpp/blob/b12675/conversion/qwen.py), [GGUF Qwen3.5](https://huggingface.co/ggml-org/Qwen3.5-4B-GGUF).
 
 Проектная когорта и quant rows приведены в [матрице экспериментов](experiment-matrix.md). Условные строки допускаются только по [плану пилота](pilot-plan.md); документальная поддержка не гарантирует скорость или memory fit на целевом устройстве.
+
+## Дополнение M3.2
+
+Кандидаты GGUF проверяются по точному repo, immutable revision, файлу, лицензии, происхождению, конвертации, quantizer и SHA-256. Сводка и нерешённые поля находятся в [реестре](model-artifact-registry.md); веса не загружались.
