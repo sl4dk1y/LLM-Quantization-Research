@@ -46,9 +46,12 @@ def process_metrics(pid: int | None) -> dict[str, Any]:
         if data.get("pid") != requested_pid:
             raise ValueError("PID в ответе нативного сборщика не совпадает")
         return {"physical_footprint_bytes": data.get("physical_footprint_bytes"),
-                "thermal_state": data.get("thermal_state"), "native_metrics_error": None}
+                "thermal_state": data.get("thermal_state"), "swap_used_bytes": data.get("swap_used_bytes"),
+                "physical_memory_bytes": data.get("physical_memory_bytes"),
+                "native_metrics_error": None}
     except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError) as exc:
-        return {"physical_footprint_bytes": None, "thermal_state": None,
+        return {"physical_footprint_bytes": None, "thermal_state": None, "swap_used_bytes": None,
+                "physical_memory_bytes": None,
                 "native_metrics_error": f"{type(exc).__name__}: {exc}"}
 
 

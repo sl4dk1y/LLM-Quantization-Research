@@ -32,7 +32,15 @@
     "port": 18080,
     "load_timeout_s": 300,
     "request_timeout_s": 600,
-    "version": "PIN_BEFORE_USE"
+    "version": "PIN_BEFORE_USE",
+    "gpu_layers": 0,
+    "cpu_threads": 4,
+    "cpu_threads_batch": 4,
+    "batch_size": 512,
+    "ubatch_size": 128,
+    "flash_attn": false,
+    "reasoning_mode": "off",
+    "chat_template_source": "gguf_metadata"
   },
   "generation": {
     "temperature": 0,

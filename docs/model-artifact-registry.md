@@ -10,11 +10,11 @@
 | [ggml-org](https://huggingface.co/ggml-org) | Официальная conversion organization; Qwen3-4B в текущем репозитории содержит Q4_K_M/Q8_0/F16, но не весь набор Q5_K_M/Q6_K; для Qwen3.5 видны Q4_K_M/Q8_0/BF16 и отдельные MTP/mmproj артефакты | README Qwen3-4B указывает базовый checkpoint и Apache-2.0, но не описывает quantization args/imatrix. Для полного одинакового ряда across checkpoints текущие списки файлов требуют дополнительной сверки. |
 | [Qwen](https://huggingface.co/Qwen) | Qwen3 checkpoints и GGUF репозитории доступны в официальной организации; 4B/8B cards перечисляют обычные типы, включая Q4_K_M/Q5_K_M/Q6_K/Q8_0. Для 1.7B card показывает Q8_0. Qwen3.5-4B-GGUF в этой организации не найден | Карточки связывают файлы с `Qwen/Qwen3-*`, указывают Apache-2.0 и llama.cpp. F16 и одинаковая квантовочная процедура полного ряда не подтверждены по всем размерам. |
 
-## Рекомендуемый единый кандидат
+## Предварительное сравнение источников
 
-Для будущей сверки выбран **Unsloth как предварительный единый кандидат**, потому что у всех четырёх нужных репозиториев обнаружены файлы стандартных схем и BF16, а также соответствующие GGUF model cards; это покрытие позволяет сохранить планируемую матрицу без сборки смешанного ряда из разных авторов. Это не финальное утверждение источника: до фиксации основной серии нужно проверить полный commit-pinned README/params для каждого репозитория, исходный checkpoint revision, конвертер, точные quantizer args, назначение и происхождение imatrix, шаблон, reasoning mode и поддержку выбранным llama.cpp commit.
+Unsloth — предварительный кандидат на широкое покрытие всех четырёх когорт стандартными квантованиями, но файлы BF16 нельзя считать схемой F16 из M2. Поэтому этот набор сам по себе не закрывает точный P1 baseline. Для Qwen3-4B на P0/P1 найден отдельный `ggml-org` repo с точными F16/Q8_0/Q4_K_M типами; его conversion/quantization provenance также ещё не подтверждён. Ни один источник пока не утверждён для подтверждающей серии.
 
-Если единая процедура Unsloth и dataset importance matrix не подтверждаются, не комбинировать неизвестные сторонние файлы. Вернуться к официальным Qwen checkpoints и после отдельного ресурсного решения получить единый GGUF набор одним закреплённым llama.cpp conversion/quantization pipeline, общей calibration matrix и сохранёнными командами. На данном этапе веса не скачивать и не конвертировать.
+До фиксации полной когорты нужно проверить source checkpoint revision, общий F16 GGUF intermediate, converter revision, quantizer args, назначение и provenance imatrix, tokenizer/template, reasoning mode и совместимость с зафиксированным llama.cpp commit. Если происхождение файлов не удаётся подтвердить, подготовить общий набор из официальных Qwen checkpoints одним воспроизводимым llama.cpp pipeline после отдельного ресурсного решения. Сейчас веса не скачивать и не конвертировать.
 
 | Модель | Repo ID | Обнаруженные стандартные файлы и размер из listing | Кандидатная revision для file pages | Состояние |
 | --- | --- | --- | --- | --- |
@@ -24,6 +24,38 @@
 | Qwen3.5-4B | `unsloth/Qwen3.5-4B-GGUF` | Q4_K_M 2.74 GB; Q5_K_M 3.14 GB; Q6_K 3.53 GB; Q8_0 4.48 GB; BF16 8.42 GB | Q4 page: `e87f176479d0855a907a41277aca2f8ee7a09523` | Валидационный кандидат; требуется проверить текстовый режим, MTP/mmproj sidecars и поведение llama.cpp |
 
 Размеры — округлённое отображение Hugging Face, не точные byte counts. Полные SHA-256 Q4_K_M, доступные в file page metadata сейчас: Qwen3-1.7B — `ba491cf470c3cadc624e4c8d6c9a27c998809e8ba8eb938d1689ae87e024b6b7`; Qwen3-4B — `96fd39fa356d936f2d1c6ddd513c699b5a7ad662c9812728d5f4b98907f1a45d`; Qwen3.5-4B — `00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4`. Это метаданные страниц, не checksum файлов, пересчитанный исследователями. Для 8B точный Q4 hash не считан. Перед запуском оба участника скачивают только зафиксированный файл в рамках отдельно разрешённой подготовки и независимо сверяют SHA-256; несовпадение блокирует парное сравнение.
+
+## Кандидатный набор для P0/P1
+
+Публичный listing `ggml-org/Qwen3-4B-GGUF` содержит все три точных типа P1, включая **F16** (это не BF16), на ревизии `2f3b082b1356a6123f7ed71e65aea340da25d53c`. Карточка связывает модель с `Qwen/Qwen3-4B`, указывает Apache-2.0 и файлы `Qwen3-4B-Q4_K_M.gguf`, `Qwen3-4B-Q8_0.gguf` и `Qwen3-4B-f16.gguf`.
+
+| Очерёдность | Имя файла | Тип | Отображаемый размер | SHA-256 из remote metadata |
+| --- | --- | --- | ---: | --- |
+| P0 | `Qwen3-4B-Q4_K_M.gguf` | Q4_K_M | 2.50 GB | `ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328` |
+| P1 | `Qwen3-4B-f16.gguf` | F16 | 8.05 GB | `086aef7ff71d2463d3eaf333b9df7f90914957cb3d78cb46dfd642425bbe4674` |
+| P1 | `Qwen3-4B-Q8_0.gguf` | Q8_0 | 4.28 GB | `865fbdcb8119c5cd5ba557b139d49351aa2c4e33bf93bdd7b08e24b573dd1dd4` |
+
+Округлённый общий объём P1 — около 14.83 GB. Remote SHA не заменяют независимый local SHA после получения. Это наиболее прямой кандидат для сохранения F16/Q8_0/Q4_K_M состава, но не утверждённый источник: публичные метаданные не закрепляют quantizer args, общий F16 промежуточный файл, imatrix status/provenance и точную процедуру создания отдельных квантизованных файлов. Все эти пункты остаются блокером для подтверждающей серии.
+
+После отдельного разрешения владельца команды с продолжением частичной загрузки и локальной проверкой SHA-256:
+
+```bash
+MODEL_DIR="/path/to/approved/model-cache"
+mkdir -p "$MODEL_DIR"
+MODEL_REV="2f3b082b1356a6123f7ed71e65aea340da25d53c"
+curl -fL -C - "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/$MODEL_REV/Qwen3-4B-Q4_K_M.gguf" -o "$MODEL_DIR/Qwen3-4B-Q4_K_M.gguf"
+shasum -a 256 "$MODEL_DIR/Qwen3-4B-Q4_K_M.gguf"
+```
+
+После проверки P0 и отдельного допуска к P1:
+
+```bash
+curl -fL -C - "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/$MODEL_REV/Qwen3-4B-f16.gguf" -o "$MODEL_DIR/Qwen3-4B-f16.gguf"
+curl -fL -C - "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/$MODEL_REV/Qwen3-4B-Q8_0.gguf" -o "$MODEL_DIR/Qwen3-4B-Q8_0.gguf"
+shasum -a 256 "$MODEL_DIR/Qwen3-4B-f16.gguf" "$MODEL_DIR/Qwen3-4B-Q8_0.gguf"
+```
+
+Эти команды подготовлены, но не запускались. Ни одна из двух машин пока не имеет закреплённого согласованного GGUF набора.
 
 ## Имматрица и UD
 

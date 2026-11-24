@@ -49,21 +49,24 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
     if os.uname().sysname == "Darwin":
         from .platforms.macos import process_metrics
         result.update(process_metrics(pid))
+        if result.get("physical_footprint_bytes") is not None:
+            result.pop("physical_footprint_reason", None)
         if pid is None:
             result["physical_footprint_bytes"] = None
 
     code, vm = _command(["/usr/bin/vm_stat"])
     if code == 0:
         page = re.search(r"page size of (\d+) bytes", vm)
-        values = {k: int(v.replace(",", "")) for k, v in re.findall(r"Pages (free|active|inactive|speculative|throttled|wired down|occupied by compressor):\s+([\d,]+)", vm)}
-        if page and all(k in values for k in ("free", "inactive", "speculative", "throttled")):
-            # A conservative vm_stat estimate: wired + active + compressor + file/cache etc.
-            # Kept separate from process footprint; exact Activity Monitor semantics are not claimed.
-            total_pages = sum(values.values())
-            result["system_used_bytes"] = max(0, total_pages - values["free"] - values["inactive"] - values["speculative"]) * int(page.group(1))
-            result["system_memory_source"] = "vm_stat estimated used pages; validation against Activity Monitor required"
+        values = {k: int(v.replace(",", "")) for k, v in re.findall(r"Pages (free):\s+([\d,]+)", vm)}
+        physical_total = result.get("physical_memory_bytes")
+        if page and "free" in values and type(physical_total) is int:
+            # Explicit physical-residency definition: all non-free physical pages,
+            # including reclaimable caches; distinct from the pressure category.
+            free_bytes = values["free"] * int(page.group(1))
+            result["system_used_bytes"] = max(0, physical_total - free_bytes)
+            result["system_memory_source"] = "vm_stat physical total minus free pages; includes reclaimable pages"
         else:
-            result["missing"]["system_used_bytes"] = "vm_stat output did not expose required counters"
+            result["missing"]["system_used_bytes"] = "native hw.memsize, vm_stat page size, or free-page count unavailable"
     else:
         result["missing"]["system_used_bytes"] = vm.strip()
 
@@ -76,15 +79,17 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
     else:
         result["missing"]["memory_pressure"] = pressure.strip() or "command failed"
 
-    code, swap = _command(["/usr/sbin/sysctl", "vm.swapusage"])
-    match = re.search(r"used\s*=\s*([\d.]+)([KMG])", swap, re.I)
-    if code == 0 and match:
-        factor = {"k": 1024, "m": 1024**2, "g": 1024**3}[match.group(2).lower()]
-        result["swap_used_bytes"] = int(float(match.group(1)) * factor)
-    else:
-        result["missing"]["swap_used_bytes"] = swap.strip() or "sysctl unavailable/denied"
+    if result.get("swap_used_bytes") is None:
+        code, swap = _command(["/usr/sbin/sysctl", "vm.swapusage"])
+        match = re.search(r"used\s*=\s*([\d.]+)([KMG])", swap, re.I)
+        if code == 0 and match:
+            factor = {"k": 1024, "m": 1024**2, "g": 1024**3}[match.group(2).lower()]
+            result["swap_used_bytes"] = int(float(match.group(1)) * factor)
+        else:
+            result["missing"]["swap_used_bytes"] = swap.strip() or "sysctl unavailable/denied"
     if result.get("thermal_state") is None:
         result["missing"]["thermal_state"] = result.get("native_metrics_error", "native ProcessInfo collector unavailable")
+    result.pop("physical_memory_bytes", None)
     return result
 
 

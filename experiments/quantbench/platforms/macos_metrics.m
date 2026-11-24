@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <libproc.h>
+#include <sys/sysctl.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -24,6 +25,21 @@ int main(int argc, const char *argv[]) {
             ? labels[(NSUInteger)thermal] : @"unknown";
         NSMutableDictionary *output = [@{@"pid": @(pid), @"thermal_state": label,
                                          @"thermal_raw_value": @(thermal)} mutableCopy];
+        struct xsw_usage swap = {0};
+        size_t swap_size = sizeof(swap);
+        if (sysctlbyname("vm.swapusage", &swap, &swap_size, NULL, 0) == 0 && swap_size == sizeof(swap)) {
+            output[@"swap_used_bytes"] = @(swap.xsu_used);
+        } else {
+            output[@"swap_used_bytes"] = [NSNull null];
+        }
+        uint64_t physical_memory = 0;
+        size_t physical_memory_size = sizeof(physical_memory);
+        if (sysctlbyname("hw.memsize", &physical_memory, &physical_memory_size, NULL, 0) == 0 &&
+            physical_memory_size == sizeof(physical_memory)) {
+            output[@"physical_memory_bytes"] = @(physical_memory);
+        } else {
+            output[@"physical_memory_bytes"] = [NSNull null];
+        }
         if (status == 0) output[@"physical_footprint_bytes"] = @(usage.ri_phys_footprint);
         else output[@"physical_footprint_bytes"] = [NSNull null];
         NSError *error = nil;

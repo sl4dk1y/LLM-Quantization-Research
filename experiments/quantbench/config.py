@@ -91,6 +91,21 @@ def validate_config(config: Any) -> None:
         raise ValueError("contexts не должен содержать дубли")
     if not isinstance(config["runtime"].get("executable"), str) or not config["runtime"]["executable"]:
         raise ValueError("runtime.executable обязателен")
+    runtime = config["runtime"]
+    runtime_required = ("gpu_layers", "cpu_threads", "cpu_threads_batch", "batch_size", "ubatch_size",
+                        "flash_attn", "reasoning_mode", "chat_template_source")
+    missing_runtime = [key for key in runtime_required if key not in runtime or runtime[key] is None]
+    if missing_runtime:
+        raise ValueError("runtime: не заданы параметры: " + ", ".join(missing_runtime))
+    for key in ("cpu_threads", "cpu_threads_batch", "batch_size", "ubatch_size"):
+        if type(runtime[key]) is not int or runtime[key] < 1:
+            raise ValueError(f"runtime.{key} должен быть положительным целым числом")
+    if not (type(runtime["gpu_layers"]) is int and runtime["gpu_layers"] >= 0 or runtime["gpu_layers"] in {"auto", "all"}):
+        raise ValueError("runtime.gpu_layers должен быть неотрицательным числом, auto или all")
+    if type(runtime["flash_attn"]) is not bool or runtime["reasoning_mode"] not in {"on", "off"}:
+        raise ValueError("runtime.flash_attn должен быть boolean, reasoning_mode — on/off")
+    if runtime["chat_template_source"] != "gguf_metadata":
+        raise ValueError("runtime.chat_template_source должен быть явно задан как gguf_metadata")
     if not 1 <= config["runtime"]["port"] <= 65535:
         raise ValueError("runtime.port должен быть в диапазоне 1..65535")
     if config["runtime"]["load_timeout_s"] > 300 or config["runtime"]["request_timeout_s"] > 600:
@@ -100,5 +115,13 @@ def validate_config(config: Any) -> None:
             raise ValueError(f"generation.{key} должен быть числом 0..1")
     if "max_new_tokens" in config["generation"] and (type(config["generation"]["max_new_tokens"]) is not int or config["generation"]["max_new_tokens"] < 1):
         raise ValueError("generation.max_new_tokens должен быть положительным целым числом")
+    generation_required = ("temperature", "top_p", "top_k", "seed", "max_new_tokens")
+    missing_generation = [key for key in generation_required if key not in config["generation"]]
+    if missing_generation:
+        raise ValueError("generation: не заданы параметры: " + ", ".join(missing_generation))
+    if type(config["generation"]["top_k"]) is not int or config["generation"]["top_k"] < 0:
+        raise ValueError("generation.top_k должен быть неотрицательным целым числом")
+    if type(config["generation"]["seed"]) is not int:
+        raise ValueError("generation.seed должен быть целым числом")
     if not config["generation"] or not config["limits"] or not config["output"]:
         raise ValueError("generation, limits и output должны быть заполнены")

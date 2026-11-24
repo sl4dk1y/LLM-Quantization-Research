@@ -21,8 +21,8 @@ def fixture_config():
         "mode": "dry_run", "seed": 1,
         "models": [{"id": "m", "revision": "r", "gguf_path": "/m.gguf", "gguf_sha256": "b" * 64, "quantization": "Q4_K_M", "kv_cache": "f16"}],
         "datasets": [{"id": "d", "revision": "r", "sha256": "c" * 64, "path": "/d.jsonl", "split": "dev", "tasks": ["t"]}],
-        "runtime": {"executable": "llama-server", "host": "127.0.0.1", "port": 1, "load_timeout_s": 1, "request_timeout_s": 1, "version": "v"},
-        "generation": {"temperature": 0}, "sampling": {"strategy": "sha256_rank", "items_per_task": 1},
+        "runtime": {"executable": "llama-server", "host": "127.0.0.1", "port": 1, "load_timeout_s": 1, "request_timeout_s": 1, "version": "v", "gpu_layers": 0, "cpu_threads": 4, "cpu_threads_batch": 4, "batch_size": 512, "ubatch_size": 128, "flash_attn": False, "reasoning_mode": "off", "chat_template_source": "gguf_metadata"},
+        "generation": {"temperature": 0, "top_p": 1, "top_k": 0, "seed": 42, "max_new_tokens": 8}, "sampling": {"strategy": "sha256_rank", "items_per_task": 1},
         "contexts": [128], "limits": {"max_system_used_gib": 12}, "repeats": {"performance": 1, "warmup": 1},
         "output": {"root": "results/raw", "append_only": True},
     }
@@ -122,7 +122,19 @@ def test_local_dataset_checks_hash_split_and_unique_ids(tmp_path):
 
 def test_runtime_args_use_loopback_and_validated_model():
     config, model = fixture_config(), fixture_config()["models"][0]
-    assert "--host" in build_server_args(config, model)
+    args = build_server_args(config, model)
+    assert "--host" in args
+    for flag, value in (("--ctx-size", "128"), ("--gpu-layers", "0"), ("--threads", "4"),
+                        ("--threads-batch", "4"), ("--batch-size", "512"),
+                        ("--ubatch-size", "128"), ("--cache-type-k", "f16"),
+                        ("--cache-type-v", "f16"), ("--flash-attn", "off"),
+                        ("--reasoning", "off")):
+        assert args[args.index(flag) + 1] == value
+    assert "--jinja" in args
+    del config["runtime"]["cpu_threads"]
+    with pytest.raises(ValueError, match="cpu_threads"):
+        build_server_args(config, model)
+    config, model = fixture_config(), fixture_config()["models"][0]
     config["runtime"]["host"] = "0.0.0.0"
     with pytest.raises(ValueError, match="loopback"):
         build_server_args(config, model)
