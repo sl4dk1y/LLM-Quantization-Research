@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "protocol": {
+    "version": "0.1-draft",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "mode": "dry_run",
+  "seed": 20261124,
+  "models": [
+    {
+      "id": "Qwen/Qwen3-4B",
+      "revision": "REPLACE_WITH_PINNED_REVISION",
+      "gguf_path": "/local/path/to/model.gguf",
+      "gguf_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "quantization": "Q4_K_M",
+      "kv_cache": "f16"
+    }
+  ],
+  "datasets": [
+    {
+      "id": "MERA/MathLogicQA",
+      "revision": "REPLACE_WITH_PINNED_REVISION",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "path": "/local/path/to/approved-export.jsonl",
+      "split": "train",
+      "tasks": ["MathLogicQA"]
+    }
+  ],
+  "runtime": {
+    "executable": "llama-server",
+    "host": "127.0.0.1",
+    "port": 18080,
+    "load_timeout_s": 300,
+    "request_timeout_s": 600,
+    "version": "PIN_BEFORE_USE"
+  },
+  "generation": {
+    "temperature": 0,
+    "top_p": 1,
+    "top_k": 0,
+    "seed": 42,
+    "max_new_tokens": 64
+  },
+  "sampling": {
+    "strategy": "sha256_rank",
+    "items_per_task": 100
+  },
+  "contexts": [4096],
+  "limits": {
+    "max_system_used_gib": 12,
+    "max_swap_delta_mib": 512,
+    "warning_system_used_gib": 10.5,
+    "warning_swap_delta_mib": 256,
+    "memory_sample_interval_s": 1,
+    "recovery_pressure_seconds": 300,
+    "recovery_swap_stable_seconds": 300,
+    "max_block_seconds": 7200
+  },
+  "repeats": {
+    "performance": 30,
+    "warmup": 3
+  },
+  "output": {
+    "root": "results/raw",
+    "append_only": true
+  }
+}
