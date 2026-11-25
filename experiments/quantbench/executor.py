@@ -200,13 +200,18 @@ def _validate_scorer(job: dict[str, Any]) -> None:
 
 def _runtime_metrics(response: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
     timings = response.get("timings") if isinstance(response.get("timings"), dict) else {}
-    prompt_tokens = timings.get("prompt_n")
+    prompt_eval_tokens = timings.get("prompt_n")
+    cached_prompt_tokens = timings.get("cache_n")
+    prompt_tokens = (prompt_eval_tokens + cached_prompt_tokens
+                     if type(prompt_eval_tokens) is int and type(cached_prompt_tokens) is int else None)
     generated_tokens = timings.get("predicted_n")
     prefill_ms = timings.get("prompt_ms")
     decode_ms = timings.get("predicted_ms")
     return {
         "ttft_s": response.get("ttft_s"),
-        "prompt_tokens": prompt_tokens if type(prompt_tokens) is int else None,
+        "prompt_tokens": prompt_tokens,
+        "prompt_eval_tokens": prompt_eval_tokens if type(prompt_eval_tokens) is int else None,
+        "cached_prompt_tokens": cached_prompt_tokens if type(cached_prompt_tokens) is int else None,
         "export_prompt_tokens": row.get("prompt_token_count"),
         "prefill_duration_s": prefill_ms / 1000 if isinstance(prefill_ms, (int, float)) else None,
         "generated_tokens": generated_tokens if type(generated_tokens) is int else None,

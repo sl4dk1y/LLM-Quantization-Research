@@ -78,7 +78,7 @@ class H(BaseHTTPRequestHandler):
   self.send_response(200); self.send_header('Content-Type','text/event-stream'); self.end_headers()
   content=request['messages'][0]['content']
   answer='1' if 'PARus fixture' in content else 'A'
-  events=[{'choices':[{'delta':{'content':answer},'finish_reason':None}]}, {'timings':{'prompt_n':7,'predicted_n':1,'prompt_ms':2.5,'predicted_ms':1.5},'choices':[{'delta':{'content':''},'finish_reason':'stop'}]}]
+  events=[{'choices':[{'delta':{'content':answer},'finish_reason':None}]}, {'timings':{'prompt_n':7,'cache_n':0,'predicted_n':1,'prompt_ms':2.5,'predicted_ms':1.5},'choices':[{'delta':{'content':''},'finish_reason':'stop'}]}]
   for e in events: self.wfile.write(('data: '+json.dumps(e)+'\\n\\n').encode()); self.wfile.flush()
   self.wfile.write(b'data: [DONE]\\n\\n'); self.wfile.flush()
  def log_message(self,*args): pass
@@ -160,10 +160,39 @@ def test_fake_http_e2e_scores_and_isolates_synthetic_observations(tmp_path):
     assert all(record["score"]["exact_match"] == 1 for record in records)
     assert all(record["metrics"]["ttft_s"] is not None for record in records)
     assert all(record["metrics"]["prompt_tokens"] == 7 for record in records)
+    assert all(record["metrics"]["prompt_eval_tokens"] == 7 for record in records)
+    assert all(record["metrics"]["cached_prompt_tokens"] == 0 for record in records)
     assert all(record["metrics"]["generated_tokens"] == 1 for record in records)
     assert all(record["metrics"]["throughput_tokens_per_s"] is not None for record in records)
     assert all(record["metrics"]["resource_metrics"]["after"]["rss_bytes"]["value"] == 2048 for record in records)
     assert not (tmp_path / "results").exists()
+
+
+def test_runtime_metrics_separate_prompt_eval_from_cached_prompt_tokens():
+    from quantbench.executor import _runtime_metrics
+
+    metrics = _runtime_metrics({"ttft_s": 0.4, "request_wall_s": 0.6,
+                                "timings": {"prompt_n": 119, "cache_n": 157,
+                                            "prompt_ms": 368.658, "predicted_n": 8,
+                                            "predicted_ms": 207.723}},
+                               {"prompt_token_count": 276})
+    assert metrics["prompt_eval_tokens"] == 119
+    assert metrics["cached_prompt_tokens"] == 157
+    assert metrics["prompt_tokens"] == metrics["prompt_eval_tokens"] + metrics["cached_prompt_tokens"] == 276
+    assert metrics["export_prompt_tokens"] == 276
+    assert metrics["prefill_duration_s"] == pytest.approx(0.368658)
+    assert metrics["generated_tokens"] == 8
+    assert metrics["decode_duration_s"] == pytest.approx(0.207723)
+    assert metrics["ttft_s"] == pytest.approx(0.4)
+
+
+def test_runtime_metrics_do_not_assume_cache_count_when_missing():
+    from quantbench.executor import _runtime_metrics
+
+    metrics = _runtime_metrics({"timings": {"prompt_n": 7}}, {})
+    assert metrics["prompt_eval_tokens"] == 7
+    assert metrics["cached_prompt_tokens"] is None
+    assert metrics["prompt_tokens"] is None
 
 
 def test_fake_run_rejects_manifest_digest_change(tmp_path):
