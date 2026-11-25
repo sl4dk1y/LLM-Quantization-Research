@@ -104,6 +104,7 @@ def test_changed_job_plan_and_safety_stop_fail_closed(tmp_path):
 
 def test_platform_pairing_checks_controlled_fields_and_missing_ids():
     base = {"status": "complete", "observation_id": "obs-1", "platform_id": "metal",
+            "run_kind": "production", "scientific_observation": True, "block_id": "P1-main",
             "protocol_version": "v1", "protocol_hash": "1" * 64, "config_id": "cfg-1",
             "model_id": "Qwen3-4B", "model_revision": "mrev", "gguf_repo_id": "repo",
             "gguf_revision": "grev", "artifact_hash": "2" * 64, "gguf_sha256": "2" * 64,
@@ -144,10 +145,20 @@ def test_merge_rejects_incomplete_series_and_preserves_sources(tmp_path):
 
 def test_immutable_snapshot_and_measured_only_time_estimates(tmp_path):
     raw = tmp_path / "observations.jsonl"
-    raw.write_text('{"status":"complete","observation_id":"obs-1","block_id":"P1","platform_id":"metal","model_id":"Qwen3-4B","quantization":"Q4_K_M","dataset_id":"MERA","task":"MathLogicQA","score_primary":1.0,"duration_s":2.0}\n', encoding="utf-8")
+    raw.write_text(json.dumps({"status": "complete", "observation_id": "obs-1", "block_id": "P1",
+                               "platform_id": "metal", "model_id": "Qwen3-4B", "quantization": "Q4_K_M",
+                               "dataset_id": "MERA", "task": "MathLogicQA", "run_kind": "production",
+                               "scientific_observation": True, "mode": "held_out", "score": {"exact_match": 1.0},
+                               "metrics": {"end_to_end_latency_s": 2.0}}) + "\n", encoding="utf-8")
+    (tmp_path / "block_metrics.jsonl").write_text(json.dumps({"record_type": "block_resource_summary",
+        "block_id": "P1", "observed_peaks": {"physical_footprint_bytes": 123}}) + "\n")
     before = raw.read_bytes()
     result = export_snapshot(records_path=raw, output_path=tmp_path / "slice.json")
     assert result["source_record_count"] == 1
+    assert result["eligible_record_count"] == 1
+    assert result["groups"][0]["primary_score_descriptive"]["mean"] == 1.0
+    assert result["block_resource_summaries"][0]["observed_peaks"]["physical_footprint_bytes"] == 123
+    assert result["block_resource_source"]["record_count"] == 1
     assert raw.read_bytes() == before
     estimate = estimate_remaining([
         {"observation_id": "obs-1", "model_id": "m", "quantization": "q", "context_length": 4, "platform_id": "p"},
@@ -155,6 +166,53 @@ def test_immutable_snapshot_and_measured_only_time_estimates(tmp_path):
         [{"status": "complete", "observation_id": "obs-1", "model_id": "m", "quantization": "q", "context_length": 4, "platform_id": "p", "duration_s": 10}])
     assert estimate["estimated_seconds_from_measured_strata"] == 10
     assert estimate["includes_load_time"] is False
+
+
+def test_confirmatory_snapshot_excludes_fake_and_pilot_and_uses_nested_metrics(tmp_path):
+    raw = tmp_path / "observations.jsonl"
+    valid = {"status": "complete", "observation_id": "obs-valid", "block_id": "P1",
+             "platform_id": "metal", "model_id": "Qwen3-4B", "quantization": "Q4_K_M",
+             "dataset_id": "MERA", "task": "MathLogicQA", "run_kind": "production",
+             "scientific_observation": True, "mode": "held_out", "score": {"exact_match": 0.5},
+             "metrics": {"end_to_end_latency_s": 4.0}}
+    fake = {**valid, "observation_id": "obs-fake", "run_kind": "synthetic_fake", "scientific_observation": False}
+    pilot = {**valid, "observation_id": "obs-pilot", "block_id": "P0-pilot"}
+    raw.write_text("".join(json.dumps(row) + "\n" for row in (valid, fake, pilot)))
+    snapshot = export_snapshot(records_path=raw, output_path=tmp_path / "confirmatory.json")
+    assert snapshot["analysis_stage"] == "confirmatory"
+    assert snapshot["eligible_record_count"] == 1
+    assert snapshot["excluded_record_count"] == 2
+    assert snapshot["groups"][0]["duration_s"]["median"] == 4.0
+
+
+def test_ruopenbookqa_macro_f1_is_computed_over_complete_imbalanced_group(tmp_path):
+    raw = tmp_path / "observations.jsonl"
+    records = []
+    for index, (reference, prediction) in enumerate((("A", "A"), ("A", "A"), ("B", "A"), ("B", "A"))):
+        records.append({"status": "complete", "observation_id": f"obs-{index}", "block_id": "P1-main",
+                        "platform_id": "metal", "model_id": "Qwen3-4B", "quantization": "Q4_K_M",
+                        "dataset_id": "MERA", "task": "ruOpenBookQA", "run_kind": "production",
+                        "scientific_observation": True, "mode": "held_out", "split": "test",
+                        "score": {"exact_match": float(reference == prediction)}, "reference": reference,
+                        "prediction": prediction, "metrics": {"end_to_end_latency_s": 1.0}})
+    raw.write_text("".join(json.dumps(row) + "\n" for row in records))
+    snapshot = export_snapshot(records_path=raw, output_path=tmp_path / "macro.json")
+    assert snapshot["groups"][0]["official_macro_f1"] == pytest.approx(1 / 3)
+    assert snapshot["groups"][0]["primary_score_descriptive"]["mean"] == 0.5
+
+
+def test_pairing_rejects_synthetic_and_pilot_records_from_confirmatory_stage():
+    base = {"status": "complete", "observation_id": "obs-1", "platform_id": "metal",
+            "run_kind": "production", "scientific_observation": True, "block_id": "P1-main",
+            "mode": "held_out"}
+    left = {**base, "platform_id": "metal"}
+    right = {**base, "platform_id": "cuda"}
+    # Records without the full provenance are rejected; changing their kind/stage is also explicit.
+    for bad in ({**left, "run_kind": "synthetic_fake", "scientific_observation": False},
+                {**left, "block_id": "P0-pilot"}):
+        paired = validate_and_pair_platforms({"metal": [bad], "cuda": [right]})
+        assert paired["compatible"] is False
+        assert not paired["pairs"]
 
 
 def test_basic_metrics_are_deterministic_and_bootstrap_is_reproducible():
@@ -179,9 +237,12 @@ def test_watchdog_fails_closed_and_locks_after_emergency():
     stopped = []
     now = [40.0]
     def metrics():
-        return {"system_used_bytes": 1, "swap_delta_bytes": 0, "memory_pressure": {"category": "red"},
+        return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+                "swap_delta_bytes": 0, "memory_pressure": {"category": "red"},
                 "thermal_state": "nominal", "process_state": "running",
-                "physical_footprint_bytes": 1, "monotonic_time": now[0]}
+                "physical_footprint_bytes": 1, "pressure_notifications_available": True,
+                "runtime_active": True, "safety_model": "apple_fully_reclaimable_estimate",
+                "monotonic_time": now[0]}
     watchdog = SafetyWatchdog(sample=metrics, guard=SafetyGuard(), stop_runtime=lambda: stopped.append(True),
                               clock=lambda: now[0])
     assert watchdog.sample_once() == SafetyState.EMERGENCY_STOP

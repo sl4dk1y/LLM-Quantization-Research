@@ -55,15 +55,23 @@ def build_server_args(config: dict[str, Any], model: dict[str, Any]) -> list[str
 
 class LlamaServer:
     def __init__(self, config: dict[str, Any], model: dict[str, Any], *, log_path: str | Path,
-                 popen: Callable[..., Any] = subprocess.Popen):
+                 popen: Callable[..., Any] = subprocess.Popen, platform_adapter: Any = None,
+                 safety_watchdog: Any = None):
         self.config, self.model = config, model
         self.log_path = Path(log_path)
         self._popen = popen
+        self.platform_adapter = platform_adapter
+        self.safety_watchdog = safety_watchdog
         self.process: Any = None
         self._log = None
         self._request_lock = threading.Lock()
         self._lifecycle_lock = threading.RLock()
         self._stopping = False
+        self._safety_diagnostic_written = False
+        if (not config.get("synthetic_fake", False) and self.platform_adapter is not None and safety_watchdog is None
+                and getattr(self.platform_adapter, "platform_id", None) == "apple-metal"):
+            interval_s = config.get("limits", {}).get("memory_sample_interval_s")
+            self.platform_adapter.attach_safety(self, interval_s=interval_s)
 
     @property
     def base_url(self) -> str:
@@ -71,6 +79,13 @@ class LlamaServer:
         return f"http://{host}:{self.config['runtime']['port']}"
 
     def start(self) -> None:
+        if self.safety_watchdog is not None:
+            guard = self.safety_watchdog.guard
+            safe_wait = (guard.recovery_window_s + guard.max_metric_age_s + self.safety_watchdog.interval_s)
+            self.safety_watchdog.start()
+            if not self.safety_watchdog.wait_until_safe(timeout_s=safe_wait):
+                self.stop(grace_s=0.0)
+                raise RuntimeErrorDetail("Safety Guard не подтвердил безопасный допуск до загрузки модели")
         with self._lifecycle_lock:
             if self._stopping:
                 raise RuntimeErrorDetail("Остановка предыдущего runtime ещё выполняется")
@@ -78,10 +93,14 @@ class LlamaServer:
                 raise RuntimeErrorDetail("Экземпляр сервера уже запущен")
             if self.process is not None or self._log is not None:
                 raise RuntimeErrorDetail("Предыдущий runtime не завершён штатно")
+            if self.safety_watchdog is not None and self.safety_watchdog.stop_event.is_set():
+                raise InterruptedError("Запуск llama-server остановлен Safety Guard")
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log = self.log_path.open("ab", buffering=0)
             try:
-                process = self._popen(build_server_args(self.config, self.model), stdin=subprocess.DEVNULL,
+                command = (self.platform_adapter.runtime_args(self.config, self.model)
+                           if self.platform_adapter is not None else build_server_args(self.config, self.model))
+                process = self._popen(command, stdin=subprocess.DEVNULL,
                                       stdout=self._log, stderr=subprocess.STDOUT, shell=False, close_fds=True)
                 self.process = process
             except BaseException:
@@ -94,6 +113,8 @@ class LlamaServer:
                 with self._lifecycle_lock:
                     if self.process is not process:
                         raise InterruptedError("Запуск llama-server отменён Safety Guard")
+                if self.safety_watchdog is not None and self.safety_watchdog.stop_event.is_set():
+                    raise InterruptedError("Запуск llama-server остановлен Safety Guard")
                 if process.poll() is not None:
                     raise RuntimeErrorDetail(f"llama-server завершился при старте; лог: {self.log_path}")
                 if self._ready(timeout_s=min(0.1, max(0.01, deadline - time.monotonic()))):
@@ -115,7 +136,36 @@ class LlamaServer:
         except (OSError, urllib.error.URLError, TimeoutError):
             return False
 
+    def verify_parameters(self, expected_static: dict[str, Any],
+                          expected_generation: dict[str, Any]) -> dict[str, Any]:
+        """Сверяет фактически возвращённые runtime свойства; отсутствующие поля остаются unverified."""
+        url = self.base_url + "/props"
+        try:
+            request = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(request, timeout=2.0) as response:
+                props = json.loads(response.read().decode("utf-8"))
+        except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            return {"status": "unverified", "reason": f"runtime properties недоступны: {type(exc).__name__}",
+                    "static": {key: "unverified" for key in expected_static},
+                    "generation": {key: "unverified" for key in expected_generation},
+                    "actual_static": {}, "actual_generation": {}}
+        actual_static = props.get("runtime_parameters") if isinstance(props, dict) else None
+        actual_generation = props.get("accepted_generation_parameters") if isinstance(props, dict) else None
+        static_status = {key: ("verified" if isinstance(actual_static, dict) and actual_static.get(key) == value
+                               else "unverified") for key, value in expected_static.items()}
+        generation_status = {key: ("verified" if isinstance(actual_generation, dict)
+                                    and actual_generation.get(key) == value else "unverified")
+                             for key, value in expected_generation.items()}
+        all_verified = all(value == "verified" for value in (*static_status.values(), *generation_status.values()))
+        return {"status": "verified" if all_verified else "unverified",
+                "static": static_status, "generation": generation_status,
+                "actual_static": actual_static if isinstance(actual_static, dict) else {},
+                "actual_generation": actual_generation if isinstance(actual_generation, dict) else {},
+                "source": "llama-server /props"}
+
     def generate(self, prompt: str, generation: dict[str, Any], *, cancel: threading.Event | None = None) -> dict[str, Any]:
+        if self.safety_watchdog is not None:
+            self.safety_watchdog.assert_safe()
         if self.process is None or self.process.poll() is not None:
             raise RuntimeErrorDetail("llama-server не запущен")
         if not self._request_lock.acquire(blocking=False):
@@ -123,13 +173,13 @@ class LlamaServer:
         start = time.monotonic()
         deadline = start + float(self.config["runtime"]["request_timeout_s"])
         try:
-            required_generation = ("temperature", "top_p", "top_k", "seed", "max_new_tokens")
+            required_generation = ("temperature", "top_p", "top_k", "min_p", "seed", "max_new_tokens")
             missing_generation = [key for key in required_generation if key not in generation]
             if missing_generation:
                 raise RuntimeErrorDetail("Не заданы параметры генерации: " + ", ".join(missing_generation))
             payload = {"model": "local", "prompt": prompt, "stream": True,
                        "temperature": generation["temperature"], "top_p": generation["top_p"],
-                       "top_k": generation["top_k"], "seed": generation["seed"],
+                         "top_k": generation["top_k"], "min_p": generation["min_p"], "seed": generation["seed"],
                        "max_tokens": generation["max_new_tokens"]}
             request = urllib.request.Request(self.base_url + "/v1/completions",
                                              data=json.dumps(payload).encode(),
@@ -178,7 +228,9 @@ class LlamaServer:
 
             threading.Thread(target=read_response, name="quantbench-http-reader", daemon=True).start()
             while True:
-                if cancel is not None and cancel.is_set():
+                safety_cancelled = (self.safety_watchdog is not None and
+                                    self.safety_watchdog.stop_event.is_set())
+                if safety_cancelled or (cancel is not None and cancel.is_set()):
                     with state_lock:
                         response = state["response"]
                     abort_response(response)
@@ -248,6 +300,16 @@ class LlamaServer:
             process = self.process
         error = None
         try:
+            if (self.safety_watchdog is not None and self.safety_watchdog.stop_event.is_set()
+                    and self._log is not None and not self._safety_diagnostic_written):
+                diagnostic = {"event": "SAFETY_GUARD_STOP", "state": self.safety_watchdog.last_state.value,
+                              "error": self.safety_watchdog.last_error,
+                              "metrics": self.safety_watchdog.last_metrics}
+                try:
+                    self._log.write((json.dumps(diagnostic, ensure_ascii=False, sort_keys=True) + "\n").encode())
+                    self._safety_diagnostic_written = True
+                except OSError as exc:
+                    error = exc
             if process is not None and process.poll() is None:
                 process.terminate()
                 try:
@@ -266,6 +328,12 @@ class LlamaServer:
                         self._log.close()
                         self._log = None
                 self._stopping = False
+            if self.safety_watchdog is not None:
+                self.safety_watchdog.close(timeout_s=1.0)
+            pressure_monitor = getattr(self, "_pressure_monitor", None)
+            if pressure_monitor is not None:
+                pressure_monitor.close()
+                self._pressure_monitor = None
         if error is not None:
             raise RuntimeErrorDetail(f"Не удалось своевременно остановить принадлежащий runtime процесс: {error}") from error
 

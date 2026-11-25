@@ -6,10 +6,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from quantbench.runtime import LlamaServer, RuntimeErrorDetail
-from quantbench.safety import SafetyGuard
+from quantbench.safety import SafetyGuard, SafetyState
 from quantbench.watchdog import SafetyWatchdog
 
-GENERATION = {"temperature": 0, "top_p": 1, "top_k": 0, "seed": 42, "max_new_tokens": 8}
+GENERATION = {"temperature": 0, "top_p": 1, "top_k": 0, "min_p": 0, "seed": 42, "max_new_tokens": 8}
 
 
 class FakeProcess:
@@ -25,6 +25,22 @@ class FakeProcess:
     def wait(self, timeout=None):
         self.terminated = True
         return 0
+
+
+def test_runtime_passes_protocol_monitoring_interval_to_platform_adapter(tmp_path):
+    captured = {}
+
+    class Adapter:
+        platform_id = "apple-metal"
+
+        def attach_safety(self, runtime, *, interval_s=None):
+            captured["runtime"] = runtime
+            captured["interval_s"] = interval_s
+
+    config = {"runtime": {"host": "127.0.0.1", "port": 10001}, "limits": {"memory_sample_interval_s": 1.25}}
+    runtime = LlamaServer(config, {"gguf_path": "unused.gguf", "kv_cache": "f16"},
+                          log_path=tmp_path / "runtime.log", platform_adapter=Adapter())
+    assert captured == {"runtime": runtime, "interval_s": 1.25}
 
 
 @pytest.fixture
@@ -130,8 +146,8 @@ def test_fake_server_streaming_success_and_timings(fake_runtime):
     assert response["finish_reason"] == "stop"
     assert response["timings"]["predicted_per_second"] == 12.5
     assert response["ttft_s"] is not None
-    assert {key: handler.last_payload[key] for key in ("temperature", "top_p", "top_k", "seed", "max_tokens")} == {
-        "temperature": 0, "top_p": 1, "top_k": 0, "seed": 42, "max_tokens": 8}
+    assert {key: handler.last_payload[key] for key in ("temperature", "top_p", "top_k", "min_p", "seed", "max_tokens")} == {
+        "temperature": 0, "top_p": 1, "top_k": 0, "min_p": 0, "seed": 42, "max_tokens": 8}
 
 
 def test_fake_server_without_timings_keeps_client_metrics(fake_runtime):
@@ -165,6 +181,72 @@ def test_fake_server_delayed_readiness(fake_runtime):
     runtime.start()
     assert handler.health_requests >= 3
     runtime.stop()
+
+
+def test_runtime_watchdog_normal_start_request_and_stop(fake_runtime):
+    runtime, handler = fake_runtime
+    handler.mode = "delayed_readiness"
+    runtime.process = None
+    process = FakeProcess()
+    runtime._popen = lambda *_args, **_kwargs: process
+    guard = SafetyGuard(state=SafetyState.SAFE)
+
+    def sample():
+        active = runtime.process is not None and runtime.process.poll() is None
+        return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+                "swap_delta_bytes": 0, "memory_pressure": {"category": None},
+                "thermal_state": "nominal", "process_state": "running" if active else "not_started",
+                "physical_footprint_bytes": 1 if active else None, "pressure_notifications_available": True,
+                "runtime_active": active, "safety_model": "apple_fully_reclaimable_estimate",
+                "monotonic_time": time.monotonic()}
+
+    watchdog = SafetyWatchdog(sample=sample, guard=guard,
+                              stop_runtime=lambda: runtime.stop(grace_s=0.1), interval_s=0.02)
+    runtime.safety_watchdog = watchdog
+    runtime.start()
+    response = runtime.generate("prompt", GENERATION)
+    runtime.stop()
+    assert response["text"] == "hello world"
+    assert process.terminated
+    assert watchdog._thread is None
+
+
+def test_runtime_watchdog_stops_owned_process_during_startup(fake_runtime):
+    runtime, handler = fake_runtime
+    handler.mode = "hanging_readiness"
+    runtime.process = None
+    runtime.config["runtime"]["load_timeout_s"] = 3
+    process = FakeProcess()
+    process_started = [False]
+
+    def start_process(*_args, **_kwargs):
+        process_started[0] = True
+        return process
+
+    runtime._popen = start_process
+    calls = [0]
+
+    def sample():
+        calls[0] += 1
+        return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+                "swap_delta_bytes": 0,
+                "memory_pressure": {"category": "critical" if process_started[0] else None},
+                "thermal_state": "nominal", "process_state": "running",
+                "physical_footprint_bytes": 1, "pressure_notifications_available": True,
+                "runtime_active": process_started[0], "safety_model": "apple_fully_reclaimable_estimate",
+                "monotonic_time": time.monotonic()}
+
+    guard = SafetyGuard()
+    guard.state = SafetyState.SAFE
+    watchdog = SafetyWatchdog(sample=sample, guard=guard,
+                              stop_runtime=lambda: runtime.stop(grace_s=0.1), interval_s=0.01)
+    runtime.safety_watchdog = watchdog
+    with pytest.raises(InterruptedError, match="Safety Guard"):
+        runtime.start()
+    assert process.terminated
+    assert runtime.process is None
+    assert "SAFETY_GUARD_STOP" in runtime.log_path.read_text(encoding="utf-8")
+    watchdog.close()
 
 
 def test_fake_server_start_failure_cleans_up_owned_process(fake_runtime):
@@ -244,14 +326,30 @@ def test_safety_watchdog_stops_runtime_during_hanging_stream(fake_runtime):
     process = runtime.process
     outcome = []
 
+    calls = [0]
+
+    def sample():
+        calls[0] += 1
+        return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+                "swap_delta_bytes": 0, "memory_pressure": {"category": "critical" if calls[0] > 1 else None},
+                "thermal_state": "nominal", "process_state": "running",
+                "physical_footprint_bytes": 1, "pressure_notifications_available": True,
+                "runtime_active": True, "safety_model": "apple_fully_reclaimable_estimate",
+                "monotonic_time": time.monotonic()}
+
+    guard = SafetyGuard()
+    guard.state = SafetyState.SAFE
+    watchdog = SafetyWatchdog(sample=sample, guard=guard,
+                              stop_runtime=lambda: runtime.stop(grace_s=0.1), interval_s=0.01)
+    runtime.safety_watchdog = watchdog
+
     def run_request():
         try:
-            runtime.generate("prompt", GENERATION, cancel=watchdog.stop_event)
+            watchdog.start()
+            runtime.generate("prompt", GENERATION)
         except Exception as exc:
             outcome.append(exc)
 
-    watchdog = SafetyWatchdog(sample=lambda: {}, guard=SafetyGuard(),
-                              stop_runtime=lambda: runtime.stop(grace_s=0.1), interval_s=0.01)
     worker = threading.Thread(target=run_request, daemon=True)
     worker.start()
     assert handler.stream_started.wait(1)

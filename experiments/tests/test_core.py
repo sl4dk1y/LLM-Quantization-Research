@@ -9,6 +9,7 @@ from quantbench.identity import attempt_id, config_id, hardware_manifest_hash, o
 from quantbench.platform import Metric, MetricStatus, validate_snapshot
 from quantbench.runtime import build_server_args
 from quantbench.safety import SafetyGuard, SafetyState
+from quantbench.watchdog import SafetyWatchdog
 from quantbench.sampling import select_items, validate_disjoint
 from quantbench.store import append_record, completed_observations, read_records
 import quantbench.store as store_module
@@ -22,7 +23,7 @@ def fixture_config():
         "models": [{"id": "m", "revision": "r", "gguf_path": "/m.gguf", "gguf_sha256": "b" * 64, "quantization": "Q4_K_M", "kv_cache": "f16"}],
         "datasets": [{"id": "d", "revision": "r", "sha256": "c" * 64, "path": "/d.jsonl", "split": "dev", "tasks": ["t"]}],
         "runtime": {"executable": "llama-server", "host": "127.0.0.1", "port": 1, "load_timeout_s": 1, "request_timeout_s": 1, "version": "v", "gpu_layers": 0, "cpu_threads": 4, "cpu_threads_batch": 4, "batch_size": 512, "ubatch_size": 128, "flash_attn": False, "reasoning_mode": "off", "chat_template_source": "gguf_metadata"},
-        "generation": {"temperature": 0, "top_p": 1, "top_k": 0, "seed": 42, "max_new_tokens": 8}, "sampling": {"strategy": "sha256_rank", "items_per_task": 1},
+        "generation": {"temperature": 0, "top_p": 1, "top_k": 0, "min_p": 0, "seed": 42, "max_new_tokens": 8}, "sampling": {"strategy": "sha256_rank", "items_per_task": 1},
         "contexts": [128], "limits": {"max_system_used_gib": 12}, "repeats": {"performance": 1, "warmup": 1},
         "output": {"root": "results/raw", "append_only": True},
     }
@@ -143,9 +144,12 @@ def test_runtime_args_use_loopback_and_validated_model():
 def test_safety_guard_fails_closed_on_missing_metric_and_stops_at_threshold():
     guard = SafetyGuard()
     assert guard.evaluate({}) == SafetyState.BLOCKED
-    metrics = {"system_used_bytes": int(12 * 1024**3), "swap_delta_bytes": 0,
-               "memory_pressure": {"category": "green"}, "thermal_state": "nominal",
-               "process_state": "running", "physical_footprint_bytes": 100, "monotonic_time": 0}
+    metrics = {"system_used_bytes": int(12 * 1024**3), "available_memory_estimate_bytes": 5 * 1024**3, "reclaimable_memory_estimate_bytes": 5 * 1024**3,
+               "swap_delta_bytes": 0,
+               "memory_pressure": {"category": "warning"}, "thermal_state": "nominal",
+               "process_state": "running", "physical_footprint_bytes": 100,
+               "pressure_notifications_available": True, "runtime_active": True,
+               "safety_model": "apple_fully_reclaimable_estimate", "monotonic_time": 0}
     assert guard.evaluate(metrics, now=0) == SafetyState.WARNING
     assert guard.evaluate(metrics, now=5) == SafetyState.EMERGENCY_STOP
     assert not guard.allows_inference
@@ -153,28 +157,76 @@ def test_safety_guard_fails_closed_on_missing_metric_and_stops_at_threshold():
 
 def test_safety_guard_ignores_transient_pressure_and_requires_recovery_window():
     guard = SafetyGuard(recovery_window_s=10)
-    normal = {"system_used_bytes": 7 * 1024**3, "swap_delta_bytes": 0,
+    normal = {"system_used_bytes": 7 * 1024**3, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+              "swap_delta_bytes": 0,
               "memory_pressure": {"category": "green"}, "thermal_state": "nominal",
-              "process_state": "running", "physical_footprint_bytes": 100}
+              "process_state": "running", "physical_footprint_bytes": 100,
+              "pressure_notifications_available": True, "runtime_active": True,
+              "safety_model": "apple_fully_reclaimable_estimate"}
     assert guard.evaluate({**normal, "monotonic_time": 1}, now=1) == SafetyState.RECOVERY
     assert guard.evaluate({**normal, "monotonic_time": 11}, now=11) == SafetyState.SAFE
-    high = {**normal, "system_used_bytes": 11 * 1024**3}
+    high = {**normal, "reclaimable_memory_estimate_bytes": int(3.5 * 1024**3)}
     assert guard.evaluate({**high, "monotonic_time": 12}, now=12) == SafetyState.WARNING
     assert guard.evaluate({**normal, "monotonic_time": 14}, now=14) == SafetyState.RECOVERY
     assert guard.evaluate({**normal, "monotonic_time": 24}, now=24) == SafetyState.SAFE
 
 
+def test_apple_safety_model_keeps_system_category_unknown_and_fails_closed_without_sources():
+    metrics = {"platform": "macOS", "system_used_bytes": 15 * 1024**3, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+               "swap_delta_bytes": 0, "memory_pressure": {"category": None},
+               "thermal_state": "nominal", "process_state": "not_started", "runtime_active": False,
+               "pressure_notifications_available": True, "safety_model": "apple_fully_reclaimable_estimate",
+               "monotonic_time": 10}
+    guard = SafetyGuard(recovery_window_s=0, state=SafetyState.SAFE)
+    assert guard.evaluate(metrics, now=10) == SafetyState.SAFE
+    assert guard.evaluate({**metrics, "pressure_notifications_available": False}, now=11) == SafetyState.BLOCKED
+    assert guard.evaluate({**metrics, "thermal_state": "critical"}, now=12) == SafetyState.EMERGENCY_STOP
+
+
+def test_apple_safety_model_requires_zero_swap_growth_and_stops_on_critical_thermal():
+    metrics = {"platform": "macOS", "system_used_bytes": 15 * 1024**3, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+               "swap_delta_bytes": 0, "memory_pressure": {"category": None},
+               "thermal_state": "nominal", "process_state": "not_started", "runtime_active": False,
+               "pressure_notifications_available": True, "safety_model": "apple_fully_reclaimable_estimate",
+               "monotonic_time": 10}
+    guard = SafetyGuard(recovery_window_s=0, state=SafetyState.SAFE)
+    assert guard.evaluate({**metrics, "swap_delta_bytes": 1}, now=10) == SafetyState.RECOVERY
+    assert guard.evaluate({**metrics, "thermal_state": "critical"}, now=11) == SafetyState.EMERGENCY_STOP
+
+
+def test_apple_guard_ignores_wide_vm_estimate_when_active_memory_is_high():
+    metrics = {"platform": "macOS", "system_used_bytes": 1, "available_memory_estimate_bytes": 12 * 1024**3,
+               "active_pages_bytes": 10 * 1024**3, "inactive_pages_bytes": 2 * 1024**3,
+               "reclaimable_memory_estimate_bytes": int(2.5 * 1024**3), "swap_delta_bytes": 0,
+               "memory_pressure": {"category": None}, "thermal_state": "nominal", "process_state": "not_started",
+               "pressure_notifications_available": True, "runtime_active": False,
+               "safety_model": "apple_fully_reclaimable_estimate", "monotonic_time": 5}
+    assert SafetyGuard().evaluate(metrics, now=5) == SafetyState.EMERGENCY_STOP
+
+
+def test_apple_guard_stops_on_critical_dispatch_pressure_event():
+    metrics = {"platform": "macOS", "system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3,
+               "reclaimable_memory_estimate_bytes": 8 * 1024**3, "swap_delta_bytes": 0,
+               "memory_pressure": {"category": "critical", "source": "Dispatch memory pressure event"},
+               "thermal_state": "nominal", "process_state": "not_started", "pressure_notifications_available": True,
+               "runtime_active": False, "safety_model": "apple_fully_reclaimable_estimate", "monotonic_time": 5}
+    assert SafetyGuard().evaluate(metrics, now=5) == SafetyState.EMERGENCY_STOP
+
+
 @pytest.mark.parametrize("override", [
     {"system_used_bytes": -1},
+    {"available_memory_estimate_bytes": -1},
     {"physical_footprint_bytes": float("nan")},
     {"monotonic_time": -20},
 ])
 def test_safety_guard_blocks_invalid_and_stale_metrics(override):
     guard = SafetyGuard()
-    metrics = {"system_used_bytes": 1, "swap_delta_bytes": 0,
+    metrics = {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
+               "swap_delta_bytes": 0,
                "memory_pressure": {"category": "green"}, "thermal_state": "nominal",
                "process_state": "running", "physical_footprint_bytes": 100,
-               "monotonic_time": 10}
+               "pressure_notifications_available": True, "runtime_active": True,
+               "safety_model": "apple_fully_reclaimable_estimate", "monotonic_time": 10}
     metrics.update(override)
     assert guard.evaluate(metrics, now=20) == SafetyState.BLOCKED
 
@@ -204,3 +256,26 @@ def test_config_rejects_bool_as_integer_and_bad_hash():
     config["models"][0]["gguf_sha256"] = "z" * 64
     with pytest.raises(ValueError):
         validate_config(config)
+
+
+def test_watchdog_reports_discrete_block_peaks_and_observed_sample_interval():
+    samples = iter([
+        {"system_used_bytes": 100, "physical_footprint_bytes": 50, "rss_bytes": 40,
+         "swap_used_bytes": 10, "swap_delta_bytes": 0, "thermal_state": "nominal",
+         "memory_pressure": {"category": "normal"}, "process_state": "running", "monotonic_time": 1.0},
+        {"system_used_bytes": 120, "physical_footprint_bytes": 75, "rss_bytes": 60,
+         "swap_used_bytes": 12, "swap_delta_bytes": 2, "thermal_state": "fair",
+         "memory_pressure": {"category": "warning"}, "process_state": "running", "monotonic_time": 2.5},
+    ])
+    watchdog = SafetyWatchdog(sample=lambda: next(samples), guard=SafetyGuard(),
+                              stop_runtime=lambda: None, interval_s=1.0, clock=lambda: 2.5)
+    watchdog.sample_once()
+    watchdog.sample_once()
+    summary = watchdog.summary()
+    assert summary["sample_count"] == 2
+    assert summary["configured_sample_interval_s"] == 1.0
+    assert summary["observed_sampling_interval_s"]["mean"] == 1.5
+    assert summary["observed_peaks"] == {"system_used_bytes": 120, "physical_footprint_bytes": 75,
+                                         "rss_bytes": 60, "swap_used_bytes": 12, "swap_delta_bytes": 2}
+    assert summary["thermal_states_observed"] == ["fair", "nominal"]
+    assert "не гарантирует непрерывный максимум" in summary["peak_semantics"]

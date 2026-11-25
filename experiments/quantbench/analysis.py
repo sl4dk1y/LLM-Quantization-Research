@@ -17,7 +17,22 @@ PAIR_FIELDS = ("protocol_version", "protocol_hash", "config_id", "model_id", "mo
                "dataset_revision", "dataset_hash", "split", "task", "item_id", "context_length",
                "workload_id", "mode", "generation_seed", "performance_repeat", "generation_config",
                "tokenizer_revision", "chat_template_hash", "reasoning_mode", "llama_cpp_commit",
-               "runtime_version", "scorer_version", "comparison_series")
+               "runtime_version", "scorer_version", "comparison_series", "block_id")
+
+
+def _analysis_eligible(row: dict[str, Any], stage: str) -> bool:
+    if row.get("status") != "complete" or row.get("run_kind") != "production" \
+            or row.get("scientific_observation") is not True:
+        return False
+    block = str(row.get("block_id", "")).casefold()
+    mode = str(row.get("mode", "")).casefold()
+    if stage == "pilot":
+        return block.startswith("p0") or "pilot" in mode
+    if stage == "confirmatory":
+        return not (block.startswith("p0") or "pilot" in mode or "development" in mode or "train" in mode)
+    if stage == "descriptive":
+        return True
+    raise ValueError("stage должен быть pilot, confirmatory или descriptive")
 
 def source_sha256(path: str | Path) -> str:
     h = hashlib.sha256()
@@ -26,16 +41,20 @@ def source_sha256(path: str | Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
-def validate_and_pair_platforms(records_by_platform: dict[str, Iterable[dict[str, Any]]]) -> dict[str, Any]:
+def validate_and_pair_platforms(records_by_platform: dict[str, Iterable[dict[str, Any]]], *,
+                                stage: str = "confirmatory") -> dict[str, Any]:
     """Проверяет совместимость записей и строит пары по общему observation_id."""
     if len(records_by_platform) < 2:
         raise ValueError("Для межплатформенного сопоставления нужны минимум две платформы")
     by_platform: dict[str, dict[str, dict[str, Any]]] = {}
     issues: list[str] = []
+    excluded_by_platform: dict[str, int] = {}
     for platform_id, records in records_by_platform.items():
         index: dict[str, dict[str, Any]] = {}
+        excluded_by_platform[platform_id] = 0
         for row in records:
-            if row.get("status") != "complete":
+            if not _analysis_eligible(row, stage):
+                excluded_by_platform[platform_id] += 1
                 continue
             logical_id = row.get("observation_id")
             if not logical_id:
@@ -77,13 +96,15 @@ def validate_and_pair_platforms(records_by_platform: dict[str, Iterable[dict[str
     return {"compatible": not issues, "complete": all(not ids for ids in missing_by_platform.values()),
             "issues": sorted(set(issues)), "pairs": pairs,
             "missing_by_platform": missing_by_platform,
-            "counts": {p: len(rows) for p, rows in by_platform.items()}}
+            "counts": {p: len(rows) for p, rows in by_platform.items()},
+            "excluded_counts": excluded_by_platform}
 
 
-def merge_result_files(sources: dict[str, str | Path], output_path: str | Path) -> dict[str, Any]:
+def merge_result_files(sources: dict[str, str | Path], output_path: str | Path, *,
+                       stage: str = "confirmatory") -> dict[str, Any]:
     """Собирает новый offline package только после успешной проверки совместимости."""
     rows = {platform: read_records(path) for platform, path in sources.items()}
-    validation = validate_and_pair_platforms(rows)
+    validation = validate_and_pair_platforms(rows, stage=stage)
     if not validation["compatible"] or not validation["complete"]:
         raise ValueError("Серии несовместимы или неполны: " + "; ".join(validation["issues"]))
     body = {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
@@ -118,21 +139,29 @@ def bootstrap_mean_interval(values: Iterable[float], *, seed: int = 20261124,
             "seed": seed, "resamples": resamples}
 
 def export_snapshot(*, records_path: str | Path, output_path: str | Path,
-                    block_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+                    block_metadata: dict[str, Any] | None = None,
+                    stage: str = "confirmatory") -> dict[str, Any]:
     """Создаёт новый snapshot; исходный JSONL не изменяется."""
     rows = read_records(records_path)
-    complete = [row for row in rows if row.get("status") == "complete"]
+    block_metrics_path = Path(records_path).parent / "block_metrics.jsonl"
+    block_metrics = read_records(block_metrics_path) if block_metrics_path.is_file() else []
+    complete_source = [row for row in rows if row.get("status") == "complete"]
+    complete = [row for row in rows if _analysis_eligible(row, stage)]
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in complete:
         key = "|".join(str(row.get(field, "unknown")) for field in
-                       ("block_id", "platform_id", "model_id", "quantization", "dataset_id", "task"))
+                       ("block_id", "platform_id", "model_id", "model_revision", "gguf_sha256",
+                        "quantization", "kv_cache", "dataset_id", "dataset_revision", "dataset_hash",
+                        "split", "task", "context_length", "mode", "generation_seed"))
         grouped[key].append(row)
     groups = []
     for key, values in sorted(grouped.items()):
-        scores = [float(row["score_primary"]) for row in values
-                  if isinstance(row.get("score_primary"), (int, float))]
-        durations = [float(row["duration_s"]) for row in values
-                     if isinstance(row.get("duration_s"), (int, float)) and row["duration_s"] >= 0]
+        scores = [float((row.get("score") or {}).get("exact_match", (row.get("score") or {}).get("f1")))
+                  for row in values if isinstance(row.get("score"), dict)
+                  and isinstance((row.get("score") or {}).get("exact_match", (row.get("score") or {}).get("f1")), (int, float))]
+        durations = [float((row.get("metrics") or {}).get("end_to_end_latency_s")) for row in values
+                     if isinstance((row.get("metrics") or {}).get("end_to_end_latency_s"), (int, float))
+                     and (row.get("metrics") or {}).get("end_to_end_latency_s") >= 0]
         item = {"group": key, "n_complete": len(values)}
         if scores:
             seed = int(digest(key)[:8], 16)
@@ -141,6 +170,22 @@ def export_snapshot(*, records_path: str | Path, output_path: str | Path,
             ordered = sorted(durations)
             item["duration_s"] = {"n": len(durations), "median": ordered[len(ordered) // 2],
                                   "p95": ordered[min(int(0.95 * len(ordered)), len(ordered) - 1)]}
+        if values and values[0].get("task") == "ruOpenBookQA":
+            from .dataset_pipeline import score_mera
+            predictions, references = [], []
+            for row in values:
+                prediction = row.get("prediction")
+                reference = row.get("reference")
+                if isinstance(prediction, str) and isinstance(reference, str) and reference:
+                    if (row.get("metrics") or {}).get("truncated"):
+                        prediction = "__TRUNCATED_GENERATION__"
+                    predictions.append(prediction)
+                    references.append(reference)
+            if len(predictions) == len(values):
+                item["official_macro_f1"] = score_mera(
+                    task="ruOpenBookQA", predictions=predictions, references=references)["metrics"]["f1"]
+            else:
+                item["official_macro_f1_status"] = "unavailable_missing_prediction_or_reference"
         groups.append(item)
     metadata_fields = ("platform_id", "hardware_manifest", "hardware_manifest_hash", "runtime_version",
                        "runtime_binary_sha256", "llama_cpp_commit",
@@ -150,13 +195,22 @@ def export_snapshot(*, records_path: str | Path, output_path: str | Path,
                 for field in metadata_fields}
     body = {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
             "source_path": Path(records_path).name, "source_sha256": source_sha256(records_path),
-            "source_record_count": len(rows), "complete_record_count": len(complete),
+            "source_record_count": len(rows), "complete_source_record_count": len(complete_source),
+            "complete_record_count": len(complete),
             "failed_attempt_count": sum(row.get("status") == "failed" for row in rows),
             "error_counts": dict(sorted(Counter(row.get("error_type", "unknown")
                                                   for row in rows if row.get("status") in {"failed", "blocked"}).items())),
             "blocked_event_count": sum(row.get("status") == "blocked" for row in rows),
+            "analysis_stage": stage, "eligible_record_count": len(complete),
+            "excluded_record_count": len(rows) - len(complete),
+            "block_resource_summaries": block_metrics,
+            "block_resource_source": ({"path": block_metrics_path.name,
+                                        "sha256": source_sha256(block_metrics_path),
+                                        "record_count": len(block_metrics)}
+                                       if block_metrics_path.is_file() else None),
             "block_metadata": block_metadata or {}, "metadata_values": metadata, "groups": groups,
-            "notes": ["Описательный срез; подтверждающие сравнения требуют отдельной совместимости."]}
+            "notes": ["Bootstrap здесь описательный; paired permutation, Holm и McNemar относятся к M6.",
+                      "Ресурсные пики берутся из сопоставленного block_metrics.jsonl, если он предоставлен."]}
     body["snapshot_id"] = "slice-" + digest(body)[:24]
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -36,7 +36,7 @@ class SafetyGuard:
     def evaluate(self, metrics: dict[str, Any], *, load_timed_out: bool = False,
                  request_timed_out: bool = False, now: float | None = None) -> SafetyState:
         now = self._clock() if now is None else now
-        required = ("system_used_bytes", "swap_delta_bytes", "memory_pressure", "thermal_state", "process_state", "physical_footprint_bytes")
+        required = ("system_used_bytes", "swap_delta_bytes", "thermal_state", "process_state")
         if any(metrics.get(key) is None for key in required):
             self._unsafe_since = None
             self._recovery_since = None
@@ -46,23 +46,65 @@ class SafetyGuard:
             self._unsafe_since = None
             self._recovery_since = None
             return self._set(SafetyState.BLOCKED)
-        for key in ("system_used_bytes", "swap_delta_bytes", "physical_footprint_bytes"):
+        for key in ("system_used_bytes", "swap_delta_bytes"):
             value = metrics.get(key)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 self._unsafe_since = None
                 self._recovery_since = None
                 return self._set(SafetyState.BLOCKED)
-        pressure = metrics["memory_pressure"]
+        pressure = metrics.get("memory_pressure")
         category = pressure.get("category") if isinstance(pressure, dict) else pressure
+        if category is not None and not isinstance(category, str):
+            self._unsafe_since = None
+            self._recovery_since = None
+            return self._set(SafetyState.BLOCKED)
+        apple_reclaimable_model = metrics.get("safety_model") == "apple_fully_reclaimable_estimate"
+        if metrics.get("platform") == "macOS" and not apple_reclaimable_model:
+            self._unsafe_since = None
+            self._recovery_since = None
+            return self._set(SafetyState.BLOCKED)
+        if apple_reclaimable_model:
+            reclaimable = metrics.get("reclaimable_memory_estimate_bytes")
+            if (reclaimable is None or metrics.get("pressure_notifications_available") is not True
+                    or isinstance(reclaimable, bool) or not isinstance(reclaimable, (int, float))
+                    or not math.isfinite(reclaimable) or reclaimable < 0):
+                self._unsafe_since = None
+                self._recovery_since = None
+                return self._set(SafetyState.BLOCKED)
+            safety_reclaimable_gib = reclaimable / 1024**3
+        elif category not in {"green", "normal", "yellow", "red", "warning", "critical", "warn"}:
+            self._unsafe_since = None
+            self._recovery_since = None
+            return self._set(SafetyState.BLOCKED)
+        else:
+            safety_reclaimable_gib = None
         used_gib = metrics["system_used_bytes"] / 1024**3
         swap_mib = metrics["swap_delta_bytes"] / 1024**2
         thermal = metrics["thermal_state"]
-        if category in {"red", "critical"} or thermal == "critical" or load_timed_out or request_timed_out:
+        runtime_active = metrics.get("runtime_active", False)
+        if runtime_active and metrics.get("process_state") in {"unknown", "not_found"}:
+            self._unsafe_since = None
+            self._recovery_since = None
+            return self._set(SafetyState.BLOCKED)
+        if runtime_active and any(metrics.get(key) is None for key in ("physical_footprint_bytes",)):
+            self._unsafe_since = None
+            self._recovery_since = None
+            return self._set(SafetyState.BLOCKED)
+        footprint = metrics.get("physical_footprint_bytes")
+        if footprint is not None and (isinstance(footprint, bool) or not isinstance(footprint, (int, float))
+                                      or not math.isfinite(footprint) or footprint < 0):
+            self._unsafe_since = None
+            self._recovery_since = None
+            return self._set(SafetyState.BLOCKED)
+        memory_emergency = (safety_reclaimable_gib < 3.0 if apple_reclaimable_model else used_gib >= self.max_used_gib)
+        if (category in {"red", "critical"} or thermal == "critical" or load_timed_out or request_timed_out
+                or memory_emergency):
             self._unsafe_since = now
             self._recovery_since = None
             return self._set(SafetyState.EMERGENCY_STOP)
-        unsafe = (used_gib >= self.max_used_gib or swap_mib >= self.max_swap_mib or
-                  category == "yellow" or used_gib > self.warning_used_gib or
+        memory_warning = (safety_reclaimable_gib < 4.0 if apple_reclaimable_model else used_gib > self.warning_used_gib)
+        unsafe = (memory_warning or swap_mib >= self.max_swap_mib or
+                  category in {"yellow", "warn", "warning"} or
                   swap_mib >= self.warning_swap_mib or thermal == "serious")
         if unsafe:
             self._recovery_since = None
@@ -71,12 +113,16 @@ class SafetyGuard:
             if now - self._unsafe_since >= self.exceedance_window_s:
                 return self._set(SafetyState.EMERGENCY_STOP)
             return self._set(SafetyState.WARNING)
-        if category not in {"green", "normal"} or thermal not in {"nominal", "fair", "good"}:
+        if (category not in ({None, "green", "normal"} if apple_reclaimable_model else {"green", "normal"})
+                or thermal not in {"nominal", "fair", "good"}):
             self._unsafe_since = None
             return self._set(SafetyState.BLOCKED)
         if self.state in {SafetyState.EMERGENCY_STOP, SafetyState.RECOVERY, SafetyState.BLOCKED,
                           SafetyState.WARNING}:
-            safely_recovered = used_gib <= self.recovery_used_gib and swap_mib < self.warning_swap_mib
+            memory_recovered = (safety_reclaimable_gib >= 4.0 and metrics["swap_delta_bytes"] == 0
+                                if apple_reclaimable_model else
+                                used_gib <= self.recovery_used_gib and swap_mib < self.warning_swap_mib)
+            safely_recovered = memory_recovered
             if not safely_recovered:
                 self._recovery_since = None
                 return self._set(SafetyState.RECOVERY)
@@ -86,7 +132,8 @@ class SafetyGuard:
                 return self._set(SafetyState.RECOVERY)
         self._unsafe_since = None
         self._recovery_since = None
-        if used_gib > self.recovery_used_gib:
+        if ((safety_reclaimable_gib < 4.0 if apple_reclaimable_model else used_gib > self.recovery_used_gib)
+                or (apple_reclaimable_model and metrics["swap_delta_bytes"] != 0)):
             return self._set(SafetyState.RECOVERY)
         return self._set(SafetyState.SAFE)
 

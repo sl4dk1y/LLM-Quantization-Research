@@ -34,8 +34,11 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
         "monotonic_time": time.monotonic(),
         "platform": "macOS" if os.uname().sysname == "Darwin" else os.uname().sysname,
         "process_state": "unknown", "rss_bytes": None, "physical_footprint_bytes": None,
-        "system_used_bytes": None, "memory_pressure": None, "swap_used_bytes": None,
+        "system_used_bytes": None, "available_memory_estimate_bytes": None,
+        "reclaimable_memory_estimate_bytes": None, "file_backed_pages_bytes": None,
+        "memory_pressure": None, "swap_used_bytes": None,
         "thermal_state": None, "swap_delta_bytes": None, "missing": {},
+        "physical_memory_bytes": None,
     }
     if pid is not None:
         mem = _proc_memory(pid)
@@ -57,16 +60,44 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
     code, vm = _command(["/usr/bin/vm_stat"])
     if code == 0:
         page = re.search(r"page size of (\d+) bytes", vm)
-        values = {k: int(v.replace(",", "")) for k, v in re.findall(r"Pages (free):\s+([\d,]+)", vm)}
+        values = {k: int(v.replace(",", "")) for k, v in
+                  re.findall(r"Pages ([^:]+):\s+([\d,]+)", vm)}
+        file_backed = re.search(r"File-backed pages:\s*([\d,]+)", vm, re.IGNORECASE)
+        if file_backed:
+            values["file-backed"] = int(file_backed.group(1).replace(",", ""))
         physical_total = result.get("physical_memory_bytes")
         if page and "free" in values and type(physical_total) is int:
-            # Explicit physical-residency definition: all non-free physical pages,
-            # including reclaimable caches; distinct from the pressure category.
-            free_bytes = values["free"] * int(page.group(1))
+            page_bytes = int(page.group(1))
+            free_bytes = values["free"] * page_bytes
+            result["free_pages_bytes"] = free_bytes
+            result["active_pages_bytes"] = values.get("active", 0) * page_bytes
+            result["inactive_pages_bytes"] = values.get("inactive", 0) * page_bytes
+            result["wired_pages_bytes"] = values.get("wired down", 0) * page_bytes
+            result["compressor_physical_bytes"] = values.get("occupied by compressor", 0) * page_bytes
+            result["purgeable_pages_bytes"] = values.get("purgeable", 0) * page_bytes
+            result["file_backed_pages_bytes"] = values.get("file-backed", 0) * page_bytes
+            result["speculative_pages_bytes"] = values.get("speculative", 0) * page_bytes
+            result["vm_page_size_bytes"] = page_bytes
             result["system_used_bytes"] = max(0, physical_total - free_bytes)
-            result["system_memory_source"] = "vm_stat physical total minus free pages; includes reclaimable pages"
+            # vm_stat's displayed free count excludes speculative pages, while
+            # XNU's free_count includes them. Match the broad XNU estimate but
+            # keep it diagnostic: active/inactive pages are not assuredly freeable.
+            result["available_memory_estimate_bytes"] = sum(
+                values.get(queue, 0) for queue in ("free", "speculative", "active", "inactive")) * page_bytes
+            result["reclaimable_memory_estimate_bytes"] = (
+                values.get("free", 0) + values.get("file-backed", 0) + values.get("purgeable", 0)
+            ) * page_bytes
+            result["system_memory_source"] = (
+                "vm_stat; displayed free pages exclude speculative pages although XNU free_count includes them; "
+                "system_used_bytes is total minus displayed free pages; available_memory_estimate_bytes is the "
+                "broad free+speculative+active+inactive VM estimate for diagnostics only; "
+                "reclaimable_memory_estimate_bytes follows XNU fully-reclaimable pages (free+file-backed+purgeable); "
+                "active/inactive queues are not added, and secluded-over-target is unavailable to this collector")
+            result["vm_page_counts"] = values
         else:
             result["missing"]["system_used_bytes"] = "native hw.memsize, vm_stat page size, or free-page count unavailable"
+            result["missing"]["available_memory_estimate_bytes"] = result["missing"]["system_used_bytes"]
+            result["missing"]["reclaimable_memory_estimate_bytes"] = result["missing"]["system_used_bytes"]
     else:
         result["missing"]["system_used_bytes"] = vm.strip()
 
@@ -89,7 +120,6 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
             result["missing"]["swap_used_bytes"] = swap.strip() or "sysctl unavailable/denied"
     if result.get("thermal_state") is None:
         result["missing"]["thermal_state"] = result.get("native_metrics_error", "native ProcessInfo collector unavailable")
-    result.pop("physical_memory_bytes", None)
     return result
 
 
