@@ -3,7 +3,7 @@
   "backend": "cuda",
   "ready_for_run": false,
   "runtime": {
-    "executable": "<fill-after-runtime-check>",
+    "executable": "D:\\LLM-runtime\\llama\\llama-server.exe",
     "host": "127.0.0.1",
     "port": 8080,
     "load_timeout_s": 120,
@@ -11,19 +11,19 @@
     "gpu_layers": null
   },
   "hardware_manifest": {
-    "os_name": null,
-    "os_version": null,
-    "architecture": null,
-    "cpu_model": null,
-    "ram_bytes": null,
-    "gpu_model": null,
-    "vram_bytes": null,
-    "driver_version": null,
-    "llama_cpp_revision": null
+    "os_name": "Windows 10",
+    "os_version": "10.0.19045",
+    "architecture": "AMD64",
+    "cpu_model": "AMD Ryzen 5 2600 Six-Core Processor",
+    "ram_bytes": 17106362368,
+    "gpu_model": "NVIDIA GeForce GTX 1660",
+    "vram_bytes": 6442450944,
+    "driver_version": "560.94",
+    "llama_cpp_revision": "b12359 (b1b770d90)"
   },
   "safety_profile": null,
   "local_paths": {
-    "model_root": "<set-local-model-directory>",
+    "model_root": "D:\\LLM-models",
     "dataset_root": "<set-local-dataset-directory>"
   }
 }
