@@ -1,7 +1,10 @@
 """Периодический Safety Guard с аварийным завершением текущего local runtime."""
 from __future__ import annotations
+import datetime as dt
+import json
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 from .safety import SafetyGuard, SafetyState
 
@@ -9,7 +12,8 @@ from .safety import SafetyGuard, SafetyState
 class SafetyWatchdog:
     def __init__(self, *, sample: Callable[[], dict[str, Any]], guard: SafetyGuard,
                  stop_runtime: Callable[[], None], interval_s: float | None = None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 sample_log_path: str | Path | None = None):
         self.sample = sample
         self.guard = guard
         self.stop_runtime = stop_runtime
@@ -17,6 +21,9 @@ class SafetyWatchdog:
         if self.interval_s <= 0:
             raise ValueError("sampling interval должен быть положительным")
         self.clock = clock
+        self.sample_log_path = Path(sample_log_path) if sample_log_path is not None else None
+        self._sample_log_lock = threading.Lock()
+        self._sample_index = 0
         self.stop_event = threading.Event()
         self._shutdown = threading.Event()
         self._thread: threading.Thread | None = None
@@ -30,6 +37,7 @@ class SafetyWatchdog:
         self._pressure_states: set[str] = set()
 
     def sample_once(self) -> SafetyState:
+        metrics: dict[str, Any] = {}
         try:
             metrics = self.sample()
             if "monotonic_time" not in metrics:
@@ -55,12 +63,38 @@ class SafetyWatchdog:
             state = self.guard.evaluate({}, now=self.clock())
             self.last_error = f"{type(exc).__name__}: {exc}"
         self.last_state = state
+        try:
+            self._persist_sample(metrics, state)
+        except (OSError, TypeError, ValueError) as exc:
+            self.last_error = f"resource time series write failed: {type(exc).__name__}: {exc}"
+            self.last_metrics = None
+            self.last_state = self.guard.evaluate({}, now=self.clock())
+            state = self.last_state
         if state in {SafetyState.BLOCKED, SafetyState.EMERGENCY_STOP}:
             self._trigger_stop()
         return state
 
+    def _persist_sample(self, metrics: dict[str, Any], state: SafetyState) -> None:
+        if self.sample_log_path is None:
+            return
+        record = {
+            "record_type": "safety_sample",
+            "safety_policy_version": self.guard.policy_version,
+            "sample_index": self._sample_index,
+            "recorded_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "safety_state": state.value,
+            "error": self.last_error,
+            "metrics": metrics,
+        }
+        encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n"
+        self.sample_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._sample_log_lock, self.sample_log_path.open("a", encoding="utf-8") as stream:
+            stream.write(encoded)
+            stream.flush()
+        self._sample_index += 1
+
     def assert_safe(self) -> None:
-        if self.last_state != SafetyState.SAFE or self.stop_event.is_set():
+        if not self.guard.allows_inference or self.stop_event.is_set():
             detail = self.last_error or self.last_state.value
             raise RuntimeError(f"Safety Guard не разрешает новое наблюдение: {detail}")
 
@@ -120,6 +154,7 @@ class SafetyWatchdog:
         times = self._sample_times
         intervals = [right - left for left, right in zip(times, times[1:])]
         return {
+            "safety_policy_version": self.guard.policy_version,
             "sample_count": len(times),
             "configured_sample_interval_s": self.interval_s,
             "observed_sampling_interval_s": ({"min": min(intervals), "mean": sum(intervals) / len(intervals),

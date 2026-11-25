@@ -82,6 +82,24 @@ def test_retries_do_not_reset_after_resume(tmp_path):
     assert second["remaining_jobs"] == 1
 
 
+def test_interrupted_execution_is_not_retried_even_if_oserror_is_retryable(tmp_path):
+    calls = []
+
+    def interrupted(job):
+        calls.append(job["job_id"])
+        raise InterruptedError("Safety Guard stopped the runtime")
+
+    status = run_queue(jobs()[:1], run_dir=tmp_path, execute=interrupted,
+                       preflight=lambda: None, platform_id="metal", max_attempts=3,
+                       owner_authorized=True,
+                       retryable_error=lambda exc: isinstance(exc, OSError))
+
+    assert calls == [jobs()[0]["job_id"]]
+    assert status["failed_attempts"] == 1
+    rows = [json.loads(line) for line in (tmp_path / "observations.jsonl").read_text().splitlines()]
+    assert [row["error_type"] for row in rows] == ["InterruptedError"]
+
+
 def test_execution_requires_explicit_owner_authorization(tmp_path):
     with pytest.raises(PermissionError, match="разрешения владельца"):
         run_queue(jobs()[:1], run_dir=tmp_path, execute=lambda _job: {}, preflight=lambda: None,

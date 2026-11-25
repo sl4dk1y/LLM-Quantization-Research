@@ -406,7 +406,8 @@ class ExperimentExecutor:
                 job_config = dict(self.config)
                 job_config["contexts"] = [job["context_length"]]
                 runtime_factory = lambda _job, _model: LlamaServer(
-                    job_config, _model, log_path=self.run_dir / "runtime.log", platform_adapter=self.platform_adapter)
+                      job_config, _model, log_path=self.run_dir / "runtime.log", platform_adapter=self.platform_adapter,
+                      resource_log_path=self.run_dir / "resource_samples.jsonl")
         session_key = digest({key: job.get(key) for key in (
             "block_id", "platform_id", "model_id", "model_revision", "gguf_sha256", "quantization",
             "kv_cache", "context_length", "runtime_version", "runtime_binary_sha256", "llama_cpp_commit",
@@ -538,6 +539,15 @@ class ExperimentExecutor:
         runtime = session["runtime"]
         watchdog = getattr(runtime, "safety_watchdog", None)
         summary = watchdog.summary() if watchdog is not None and hasattr(watchdog, "summary") else None
+        launch_argv = getattr(runtime, "_launch_command", None)
+        runtime_log_path = getattr(runtime, "log_path", None)
+        buffer_log_lines: list[str] = []
+        if runtime_log_path is not None:
+            try:
+                buffer_log_lines = [line for line in Path(runtime_log_path).read_text(
+                    encoding="utf-8", errors="replace").splitlines() if "buffer" in line.lower()]
+            except OSError:
+                buffer_log_lines = []
         try:
             runtime.stop()
         finally:
@@ -546,6 +556,10 @@ class ExperimentExecutor:
                 append_record(self.run_dir / "block_metrics.jsonl", {
                     "record_type": "block_resource_summary", "block_id": session["block_id"],
                     "started_at_epoch": session["started_at"], "ended_at_epoch": time.time(),
+                    "resource_timeseries_path": (str(getattr(runtime, "resource_log_path", None))
+                                                  if getattr(runtime, "resource_log_path", None) is not None else None),
+                    "runtime_launch_argv": launch_argv,
+                    "runtime_buffer_log_lines": buffer_log_lines,
                     **{key: session["job"].get(key) for key in (
                         "platform_id", "hardware_manifest_hash", "model_id", "model_revision", "gguf_sha256",
                         "quantization", "kv_cache", "context_length", "runtime_version",

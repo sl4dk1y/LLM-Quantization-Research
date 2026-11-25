@@ -163,7 +163,8 @@ class MacOSAdapter:
             data["missing"]["pressure_notifications"] = pressure_events.last_error or "Dispatch source unavailable"
         return data
 
-    def attach_safety(self, runtime: Any, *, guard: Any = None, interval_s: float | None = None) -> Any:
+    def attach_safety(self, runtime: Any, *, guard: Any = None, interval_s: float | None = None,
+                      sample_log_path: str | Path | None = None) -> Any:
         """Подключает монитор до старта server и на всём сроке его жизни."""
         from ..monitor import snapshot
         from ..safety import SafetyGuard
@@ -178,8 +179,10 @@ class MacOSAdapter:
             pid = process.pid if process is not None and process.poll() is None else None
             return self.safety_snapshot(pid=pid, swap_baseline_bytes=baseline, pressure_events=events)
 
-        watchdog = SafetyWatchdog(sample=sample, guard=guard or SafetyGuard(recovery_window_s=300.0),
-                                  stop_runtime=lambda: runtime.stop(grace_s=0.25), interval_s=interval_s)
+        watchdog = SafetyWatchdog(sample=sample, guard=guard or SafetyGuard(
+                                      recovery_window_s=30.0, sampling_interval_s=1.0),
+                                  stop_runtime=lambda: runtime.stop(grace_s=0.25), interval_s=interval_s,
+                                  sample_log_path=sample_log_path)
         runtime.platform_adapter = self
         runtime.safety_watchdog = watchdog
         runtime._pressure_monitor = events

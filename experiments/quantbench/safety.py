@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 import time
 import math
-from typing import Any
+from typing import Any, ClassVar
 
 
 class SafetyState(str, Enum):
@@ -19,12 +19,13 @@ class SafetyState(str, Enum):
 
 @dataclass
 class SafetyGuard:
+    policy_version: ClassVar[str] = "macos-safety-v2.0"
     max_used_gib: float = 12.0
     warning_used_gib: float = 10.5
     warning_swap_mib: float = 256.0
     max_swap_mib: float = 1024.0
     recovery_used_gib: float = 8.0
-    sampling_interval_s: float = 2.0
+    sampling_interval_s: float = 1.0
     exceedance_window_s: float = 5.0
     max_metric_age_s: float = 6.0
     recovery_window_s: float = 30.0
@@ -32,9 +33,12 @@ class SafetyGuard:
     state: SafetyState = SafetyState.BLOCKED
     _unsafe_since: float | None = None
     _recovery_since: float | None = None
+    _memory_warning_only: bool = False
 
     def evaluate(self, metrics: dict[str, Any], *, load_timed_out: bool = False,
                  request_timed_out: bool = False, now: float | None = None) -> SafetyState:
+        previous_memory_warning_only = self._memory_warning_only
+        self._memory_warning_only = False
         now = self._clock() if now is None else now
         required = ("system_used_bytes", "swap_delta_bytes", "thermal_state", "process_state")
         if any(metrics.get(key) is None for key in required):
@@ -71,6 +75,10 @@ class SafetyGuard:
                 self._unsafe_since = None
                 self._recovery_since = None
                 return self._set(SafetyState.BLOCKED)
+            if category not in {None, "green", "normal", "yellow", "warn", "warning", "red", "critical"}:
+                self._unsafe_since = None
+                self._recovery_since = None
+                return self._set(SafetyState.BLOCKED)
             safety_reclaimable_gib = reclaimable / 1024**3
         elif category not in {"green", "normal", "yellow", "red", "warning", "critical", "warn"}:
             self._unsafe_since = None
@@ -96,22 +104,28 @@ class SafetyGuard:
             self._unsafe_since = None
             self._recovery_since = None
             return self._set(SafetyState.BLOCKED)
-        memory_emergency = (safety_reclaimable_gib < 3.0 if apple_reclaimable_model else used_gib >= self.max_used_gib)
+        memory_emergency = (safety_reclaimable_gib < 2.0 if apple_reclaimable_model else used_gib >= self.max_used_gib)
         if (category in {"red", "critical"} or thermal == "critical" or load_timed_out or request_timed_out
                 or memory_emergency):
             self._unsafe_since = now
             self._recovery_since = None
             return self._set(SafetyState.EMERGENCY_STOP)
-        memory_warning = (safety_reclaimable_gib < 4.0 if apple_reclaimable_model else used_gib > self.warning_used_gib)
-        unsafe = (memory_warning or swap_mib >= self.max_swap_mib or
-                  category in {"yellow", "warn", "warning"} or
-                  swap_mib >= self.warning_swap_mib or thermal == "serious")
-        if unsafe:
+        memory_warning = ((runtime_active and safety_reclaimable_gib < 3.0)
+                          if apple_reclaimable_model else used_gib > self.warning_used_gib)
+        independent_warning = (swap_mib >= self.max_swap_mib or
+                               category in {"yellow", "warn", "warning"} or
+                               swap_mib >= self.warning_swap_mib or thermal == "serious")
+        if independent_warning:
             self._recovery_since = None
             if self._unsafe_since is None:
                 self._unsafe_since = now
             if now - self._unsafe_since >= self.exceedance_window_s:
                 return self._set(SafetyState.EMERGENCY_STOP)
+            return self._set(SafetyState.WARNING)
+        if memory_warning:
+            self._unsafe_since = None
+            self._recovery_since = None
+            self._memory_warning_only = apple_reclaimable_model
             return self._set(SafetyState.WARNING)
         if (category not in ({None, "green", "normal"} if apple_reclaimable_model else {"green", "normal"})
                 or thermal not in {"nominal", "fair", "good"}):
@@ -119,20 +133,27 @@ class SafetyGuard:
             return self._set(SafetyState.BLOCKED)
         if self.state in {SafetyState.EMERGENCY_STOP, SafetyState.RECOVERY, SafetyState.BLOCKED,
                           SafetyState.WARNING}:
-            memory_recovered = (safety_reclaimable_gib >= 4.0 and metrics["swap_delta_bytes"] == 0
+            runtime_recovered = (safety_reclaimable_gib >= 3.0 if runtime_active else
+                                 safety_reclaimable_gib >= 4.0)
+            memory_recovered = (runtime_recovered and metrics["swap_delta_bytes"] == 0
                                 if apple_reclaimable_model else
                                 used_gib <= self.recovery_used_gib and swap_mib < self.warning_swap_mib)
             safely_recovered = memory_recovered
-            if not safely_recovered:
+            if (runtime_active and previous_memory_warning_only and safely_recovered):
+                self._recovery_since = None
+            elif not safely_recovered:
                 self._recovery_since = None
                 return self._set(SafetyState.RECOVERY)
-            if self._recovery_since is None:
-                self._recovery_since = now
-            if now - self._recovery_since < self.recovery_window_s:
-                return self._set(SafetyState.RECOVERY)
+            else:
+                if self._recovery_since is None:
+                    self._recovery_since = now
+                if now - self._recovery_since < self.recovery_window_s:
+                    return self._set(SafetyState.RECOVERY)
         self._unsafe_since = None
         self._recovery_since = None
-        if ((safety_reclaimable_gib < 4.0 if apple_reclaimable_model else used_gib > self.recovery_used_gib)
+        runtime_minimum = (safety_reclaimable_gib < 3.0 if runtime_active else
+                           safety_reclaimable_gib < 4.0)
+        if ((runtime_minimum if apple_reclaimable_model else used_gib > self.recovery_used_gib)
                 or (apple_reclaimable_model and metrics["swap_delta_bytes"] != 0)):
             return self._set(SafetyState.RECOVERY)
         return self._set(SafetyState.SAFE)
@@ -143,4 +164,5 @@ class SafetyGuard:
 
     @property
     def allows_inference(self) -> bool:
-        return self.state == SafetyState.SAFE
+        return self.state == SafetyState.SAFE or (
+            self.state == SafetyState.WARNING and self._memory_warning_only)

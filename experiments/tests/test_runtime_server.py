@@ -240,7 +240,7 @@ def test_runtime_watchdog_normal_start_request_and_stop(fake_runtime):
     def sample():
         active = runtime.process is not None and runtime.process.poll() is None
         return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
-                "swap_delta_bytes": 0, "memory_pressure": {"category": None},
+                  "swap_delta_bytes": 0, "memory_pressure": {"category": "normal"},
                 "thermal_state": "nominal", "process_state": "running" if active else "not_started",
                 "physical_footprint_bytes": 1 if active else None, "pressure_notifications_available": True,
                 "runtime_active": active, "safety_model": "apple_fully_reclaimable_estimate",
@@ -255,6 +255,10 @@ def test_runtime_watchdog_normal_start_request_and_stop(fake_runtime):
     assert response["text"] == "hello world"
     assert process.terminated
     assert watchdog._thread is None
+    launch_rows = [json.loads(line) for line in runtime.log_path.read_text().splitlines()
+                   if line.startswith("{")]
+    launch_record = next(row for row in launch_rows if row.get("event") == "QUANTBENCH_RUNTIME_LAUNCH")
+    assert launch_record["argv"] == runtime._launch_command
 
 
 def test_runtime_watchdog_stops_owned_process_during_startup(fake_runtime):
@@ -276,7 +280,7 @@ def test_runtime_watchdog_stops_owned_process_during_startup(fake_runtime):
         calls[0] += 1
         return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
                 "swap_delta_bytes": 0,
-                "memory_pressure": {"category": "critical" if process_started[0] else None},
+                "memory_pressure": {"category": "critical" if process_started[0] else "normal"},
                 "thermal_state": "nominal", "process_state": "running",
                 "physical_footprint_bytes": 1, "pressure_notifications_available": True,
                 "runtime_active": process_started[0], "safety_model": "apple_fully_reclaimable_estimate",
@@ -377,7 +381,7 @@ def test_safety_watchdog_stops_runtime_during_hanging_stream(fake_runtime):
     def sample():
         calls[0] += 1
         return {"system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
-                "swap_delta_bytes": 0, "memory_pressure": {"category": "critical" if calls[0] > 1 else None},
+            "swap_delta_bytes": 0, "memory_pressure": {"category": "critical" if calls[0] > 1 else "normal"},
                 "thermal_state": "nominal", "process_state": "running",
                 "physical_footprint_bytes": 1, "pressure_notifications_available": True,
                 "runtime_active": True, "safety_model": "apple_fully_reclaimable_estimate",

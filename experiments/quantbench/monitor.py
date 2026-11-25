@@ -78,21 +78,29 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
             result["file_backed_pages_bytes"] = values.get("file-backed", 0) * page_bytes
             result["speculative_pages_bytes"] = values.get("speculative", 0) * page_bytes
             result["vm_page_size_bytes"] = page_bytes
-            result["system_used_bytes"] = max(0, physical_total - free_bytes)
-            # vm_stat's displayed free count excludes speculative pages, while
-            # XNU's free_count includes them. Match the broad XNU estimate but
-            # keep it diagnostic: active/inactive pages are not assuredly freeable.
+            speculative_bytes = values.get("speculative", 0) * page_bytes
+            # `vm_stat` prints free_count - speculative_count as Pages free,
+            # then reports speculative pages separately. XNU includes those
+            # pages in free_count, so combine the two disjoint display rows
+            # exactly once when reconstructing free_count.
+            xnu_free_bytes = free_bytes + speculative_bytes
+            result["system_used_bytes"] = max(0, physical_total - xnu_free_bytes)
+            # This broad diagnostic follows XNU AVAILABLE_NON_COMPRESSED_MEMORY.
+            # Active and inactive queues are diagnostic only; they are not
+            # included in the conservative fully-reclaimable safety estimate.
             result["available_memory_estimate_bytes"] = sum(
                 values.get(queue, 0) for queue in ("free", "speculative", "active", "inactive")) * page_bytes
             result["reclaimable_memory_estimate_bytes"] = (
-                values.get("free", 0) + values.get("file-backed", 0) + values.get("purgeable", 0)
+                values.get("free", 0) + values.get("speculative", 0)
+                + values.get("file-backed", 0) + values.get("purgeable", 0)
             ) * page_bytes
             result["system_memory_source"] = (
-                "vm_stat; displayed free pages exclude speculative pages although XNU free_count includes them; "
-                "system_used_bytes is total minus displayed free pages; available_memory_estimate_bytes is the "
-                "broad free+speculative+active+inactive VM estimate for diagnostics only; "
-                "reclaimable_memory_estimate_bytes follows XNU fully-reclaimable pages (free+file-backed+purgeable); "
-                "active/inactive queues are not added, and secluded-over-target is unavailable to this collector")
+                "vm_stat; Pages free is free_count minus speculative_count and Pages speculative is separate; "
+                "system_used_bytes subtracts reconstructed XNU free_count once; "
+                "available_memory_estimate_bytes is free+speculative+active+inactive for diagnostics; "
+                "reclaimable_memory_estimate_bytes is free+speculative+file-backed+purgeable; "
+                "active/inactive queues are excluded from safety reclaimable memory; "
+                "secluded-over-target is unavailable to this collector")
             result["vm_page_counts"] = values
         else:
             result["missing"]["system_used_bytes"] = "native hw.memsize, vm_stat page size, or free-page count unavailable"
@@ -103,10 +111,13 @@ def snapshot(pid: int | None = None) -> dict[str, Any]:
 
     code, pressure = _command(["/usr/bin/memory_pressure", "-Q"])
     free = re.search(r"System-wide memory free percentage:\s*(\d+)%", pressure)
+    result["memory_pressure_raw_output"] = pressure
+    result["memory_pressure_command_exit_code"] = code
     if code == 0 and free:
-        # memory_pressure -Q outputs a percentage, not Apple's named pressure category.
-        result["memory_pressure"] = {"free_percent": int(free.group(1)), "category": None}
-        result["memory_pressure_source"] = "memory_pressure -Q; category unavailable"
+        # -Q provides a free-page percentage, not the current pressure level.
+        result["memory_pressure"] = {"free_percent": int(free.group(1)), "category": None,
+                                     "state_source": "Dispatch events; no initial state query"}
+        result["memory_pressure_source"] = "memory_pressure -Q percentage; current state unavailable"
     else:
         result["missing"]["memory_pressure"] = pressure.strip() or "command failed"
 

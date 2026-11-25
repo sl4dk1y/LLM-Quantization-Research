@@ -17,7 +17,7 @@ File-backed pages:                         70.
         if argv[-1].endswith("vm_stat"):
             return 0, vm_stat
         if argv[-1:] == ["-Q"] and argv[-2].endswith("memory_pressure"):
-            return 0, "System-wide memory free percentage: 48%\n"
+              return 0, "System-wide memory free percentage: 48%\n"
         return 1, "not used in this test"
 
     monkeypatch.setattr(monitor, "_command", command)
@@ -37,9 +37,14 @@ File-backed pages:                         70.
     assert result["speculative_pages_bytes"] == 20 * 16384
     assert result["available_memory_estimate_bytes"] == 620 * 16384
     assert result["file_backed_pages_bytes"] == 70 * 16384
-    assert result["reclaimable_memory_estimate_bytes"] == 175 * 16384
-    assert result["system_used_bytes"] == 16 * 1024**3 - 100 * 16384
-    assert result["memory_pressure"] == {"free_percent": 48, "category": None}
+    assert result["system_used_bytes"] == 16 * 1024**3 - 120 * 16384
+    assert result["reclaimable_memory_estimate_bytes"] == 195 * 16384
+    assert result["memory_pressure"] == {
+        "free_percent": 48, "category": None,
+        "state_source": "Dispatch events; no initial state query",
+    }
+    assert result["memory_pressure_raw_output"] == "System-wide memory free percentage: 48%\n"
+    assert result["memory_pressure_command_exit_code"] == 0
 
 
 def test_swap_delta_accumulates_from_single_block_baseline(monkeypatch):

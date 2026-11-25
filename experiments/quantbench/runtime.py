@@ -57,9 +57,10 @@ def build_server_args(config: dict[str, Any], model: dict[str, Any]) -> list[str
 class LlamaServer:
     def __init__(self, config: dict[str, Any], model: dict[str, Any], *, log_path: str | Path,
                  popen: Callable[..., Any] = subprocess.Popen, platform_adapter: Any = None,
-                 safety_watchdog: Any = None):
+                 safety_watchdog: Any = None, resource_log_path: str | Path | None = None):
         self.config, self.model = config, model
         self.log_path = Path(log_path)
+        self.resource_log_path = Path(resource_log_path) if resource_log_path is not None else None
         self._popen = popen
         self.platform_adapter = platform_adapter
         self.safety_watchdog = safety_watchdog
@@ -73,7 +74,10 @@ class LlamaServer:
         if (not config.get("synthetic_fake", False) and self.platform_adapter is not None and safety_watchdog is None
                 and getattr(self.platform_adapter, "platform_id", None) == "apple-metal"):
             interval_s = config.get("limits", {}).get("memory_sample_interval_s")
-            self.platform_adapter.attach_safety(self, interval_s=interval_s)
+            safety_kwargs = {"interval_s": interval_s}
+            if self.resource_log_path is not None:
+                safety_kwargs["sample_log_path"] = self.resource_log_path
+            self.platform_adapter.attach_safety(self, **safety_kwargs)
 
     @property
     def base_url(self) -> str:
@@ -103,6 +107,8 @@ class LlamaServer:
                 command = (self.platform_adapter.runtime_args(self.config, self.model)
                            if self.platform_adapter is not None else build_server_args(self.config, self.model))
                 self._launch_command = list(command)
+                launch_record = {"event": "QUANTBENCH_RUNTIME_LAUNCH", "argv": self._launch_command}
+                self._log.write((json.dumps(launch_record, ensure_ascii=False, sort_keys=True) + "\n").encode())
                 process = self._popen(command, stdin=subprocess.DEVNULL,
                                       stdout=self._log, stderr=subprocess.STDOUT, shell=False, close_fds=True)
                 self.process = process

@@ -165,13 +165,13 @@ def test_safety_guard_ignores_transient_pressure_and_requires_recovery_window():
               "safety_model": "apple_fully_reclaimable_estimate"}
     assert guard.evaluate({**normal, "monotonic_time": 1}, now=1) == SafetyState.RECOVERY
     assert guard.evaluate({**normal, "monotonic_time": 11}, now=11) == SafetyState.SAFE
-    high = {**normal, "reclaimable_memory_estimate_bytes": int(3.5 * 1024**3)}
+    high = {**normal, "memory_pressure": {"category": "warning"}}
     assert guard.evaluate({**high, "monotonic_time": 12}, now=12) == SafetyState.WARNING
     assert guard.evaluate({**normal, "monotonic_time": 14}, now=14) == SafetyState.RECOVERY
     assert guard.evaluate({**normal, "monotonic_time": 24}, now=24) == SafetyState.SAFE
 
 
-def test_apple_safety_model_keeps_system_category_unknown_and_fails_closed_without_sources():
+def test_apple_safety_model_allows_unknown_initial_pressure_with_live_dispatch():
     metrics = {"platform": "macOS", "system_used_bytes": 15 * 1024**3, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
                "swap_delta_bytes": 0, "memory_pressure": {"category": None},
                "thermal_state": "nominal", "process_state": "not_started", "runtime_active": False,
@@ -183,9 +183,23 @@ def test_apple_safety_model_keeps_system_category_unknown_and_fails_closed_witho
     assert guard.evaluate({**metrics, "thermal_state": "critical"}, now=12) == SafetyState.EMERGENCY_STOP
 
 
+def test_apple_unknown_pressure_requires_30_seconds_of_numeric_safe_samples():
+    metrics = {"platform": "macOS", "system_used_bytes": 15 * 1024**3,
+               "reclaimable_memory_estimate_bytes": 4 * 1024**3,
+               "swap_delta_bytes": 0, "memory_pressure": {"category": None},
+               "thermal_state": "nominal", "process_state": "not_started", "runtime_active": False,
+               "pressure_notifications_available": True, "safety_model": "apple_fully_reclaimable_estimate"}
+    guard = SafetyGuard()
+    assert guard.evaluate({**metrics, "monotonic_time": 0}, now=0) == SafetyState.RECOVERY
+    assert guard.evaluate({**metrics, "monotonic_time": 29}, now=29) == SafetyState.RECOVERY
+    assert guard.evaluate({**metrics, "monotonic_time": 30}, now=30) == SafetyState.SAFE
+    assert guard.evaluate({**metrics, "reclaimable_memory_estimate_bytes": 4 * 1024**3 - 1,
+                           "monotonic_time": 31}, now=31) == SafetyState.RECOVERY
+
+
 def test_apple_safety_model_requires_zero_swap_growth_and_stops_on_critical_thermal():
     metrics = {"platform": "macOS", "system_used_bytes": 15 * 1024**3, "available_memory_estimate_bytes": 8 * 1024**3, "reclaimable_memory_estimate_bytes": 8 * 1024**3,
-               "swap_delta_bytes": 0, "memory_pressure": {"category": None},
+               "swap_delta_bytes": 0, "memory_pressure": {"category": "normal"},
                "thermal_state": "nominal", "process_state": "not_started", "runtime_active": False,
                "pressure_notifications_available": True, "safety_model": "apple_fully_reclaimable_estimate",
                "monotonic_time": 10}
@@ -194,14 +208,38 @@ def test_apple_safety_model_requires_zero_swap_growth_and_stops_on_critical_ther
     assert guard.evaluate({**metrics, "thermal_state": "critical"}, now=11) == SafetyState.EMERGENCY_STOP
 
 
-def test_apple_guard_ignores_wide_vm_estimate_when_active_memory_is_high():
+def test_apple_guard_warns_but_allows_work_between_two_and_three_gib():
     metrics = {"platform": "macOS", "system_used_bytes": 1, "available_memory_estimate_bytes": 12 * 1024**3,
                "active_pages_bytes": 10 * 1024**3, "inactive_pages_bytes": 2 * 1024**3,
                "reclaimable_memory_estimate_bytes": int(2.5 * 1024**3), "swap_delta_bytes": 0,
+               "memory_pressure": {"category": None}, "thermal_state": "nominal", "process_state": "running",
+               "physical_footprint_bytes": 100, "pressure_notifications_available": True, "runtime_active": True,
+               "safety_model": "apple_fully_reclaimable_estimate", "monotonic_time": 5}
+    guard = SafetyGuard(state=SafetyState.SAFE)
+    assert guard.evaluate(metrics, now=5) == SafetyState.WARNING
+    assert guard.allows_inference
+    assert guard.evaluate({**metrics, "monotonic_time": 20}, now=20) == SafetyState.WARNING
+    assert guard.allows_inference
+    watchdog = SafetyWatchdog(sample=lambda: {**metrics, "monotonic_time": 20}, guard=guard,
+                              stop_runtime=lambda: None, clock=lambda: 20)
+    watchdog.assert_safe()
+    assert guard.evaluate({**metrics, "reclaimable_memory_estimate_bytes": 2 * 1024**3,
+                           "monotonic_time": 21}, now=21) == SafetyState.WARNING
+    assert guard.evaluate({**metrics, "reclaimable_memory_estimate_bytes": int(1.99 * 1024**3),
+                           "monotonic_time": 22}, now=22) == SafetyState.EMERGENCY_STOP
+
+
+def test_apple_guard_uses_four_gib_before_run_and_three_gib_while_running():
+    metrics = {"platform": "macOS", "system_used_bytes": 1, "available_memory_estimate_bytes": 8 * 1024**3,
+               "reclaimable_memory_estimate_bytes": int(3.5 * 1024**3), "swap_delta_bytes": 0,
                "memory_pressure": {"category": None}, "thermal_state": "nominal", "process_state": "not_started",
                "pressure_notifications_available": True, "runtime_active": False,
                "safety_model": "apple_fully_reclaimable_estimate", "monotonic_time": 5}
-    assert SafetyGuard().evaluate(metrics, now=5) == SafetyState.EMERGENCY_STOP
+    assert SafetyGuard(recovery_window_s=0).evaluate(metrics, now=5) == SafetyState.RECOVERY
+    running = {**metrics, "reclaimable_memory_estimate_bytes": 3 * 1024**3,
+               "process_state": "running", "physical_footprint_bytes": 10, "runtime_active": True}
+    guard = SafetyGuard(state=SafetyState.SAFE)
+    assert guard.evaluate(running, now=6) == SafetyState.SAFE
 
 
 def test_apple_guard_stops_on_critical_dispatch_pressure_event():
@@ -216,6 +254,7 @@ def test_apple_guard_stops_on_critical_dispatch_pressure_event():
 @pytest.mark.parametrize("override", [
     {"system_used_bytes": -1},
     {"available_memory_estimate_bytes": -1},
+    {"reclaimable_memory_estimate_bytes": None},
     {"physical_footprint_bytes": float("nan")},
     {"monotonic_time": -20},
 ])
@@ -279,3 +318,27 @@ def test_watchdog_reports_discrete_block_peaks_and_observed_sample_interval():
                                          "rss_bytes": 60, "swap_used_bytes": 12, "swap_delta_bytes": 2}
     assert summary["thermal_states_observed"] == ["fair", "nominal"]
     assert "не гарантирует непрерывный максимум" in summary["peak_semantics"]
+
+
+def test_watchdog_persists_each_full_resource_sample(tmp_path):
+    samples = iter([
+        {"system_used_bytes": 100, "reclaimable_memory_estimate_bytes": 500,
+         "swap_delta_bytes": 0, "thermal_state": "nominal",
+         "memory_pressure": {"category": "normal"}, "process_state": "not_started",
+         "monotonic_time": 1.0},
+        {"system_used_bytes": 120, "reclaimable_memory_estimate_bytes": 480,
+         "swap_delta_bytes": 0, "thermal_state": "nominal",
+         "memory_pressure": {"category": "normal"}, "process_state": "not_started",
+         "monotonic_time": 2.0},
+    ])
+    path = tmp_path / "resource_samples.jsonl"
+    watchdog = SafetyWatchdog(sample=lambda: next(samples), guard=SafetyGuard(recovery_window_s=0),
+                              stop_runtime=lambda: None, sample_log_path=path, clock=lambda: 2.0)
+    watchdog.sample_once()
+    watchdog.sample_once()
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert len(records) == 2
+    assert [row["sample_index"] for row in records] == [0, 1]
+    assert all(row["record_type"] == "safety_sample" for row in records)
+    assert all(row["safety_policy_version"] == "macos-safety-v2.0" for row in records)
+    assert [row["metrics"]["reclaimable_memory_estimate_bytes"] for row in records] == [500, 480]

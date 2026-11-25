@@ -197,7 +197,8 @@ def run_queue(jobs: Iterable[dict[str, Any]], *, run_dir: str | Path,
                         observation_id, job["platform_id"], job["hardware_manifest_hash"],
                         run_id, record["attempt_id"])
                     append_record(records_path, record)
-                    if attempt_no >= max_attempts or not retryable_error(exc):
+                    if (attempt_no >= max_attempts or isinstance(exc, InterruptedError)
+                            or not retryable_error(exc)):
                         break
             if on_progress is not None:
                 on_progress({"finished_this_run": index + 1, "total_pending_at_start": len(ordered),
