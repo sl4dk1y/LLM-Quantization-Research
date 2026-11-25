@@ -76,8 +76,9 @@ class H(BaseHTTPRequestHandler):
  def do_POST(self):
   n=int(self.headers.get('content-length','0')); request=json.loads(self.rfile.read(n))
   self.send_response(200); self.send_header('Content-Type','text/event-stream'); self.end_headers()
-  answer='1' if 'PARus fixture' in request['prompt'] else 'A'
-  events=[{'choices':[{'text':answer,'finish_reason':None}]}, {'timings':{'prompt_n':7,'predicted_n':1,'prompt_ms':2.5,'predicted_ms':1.5},'choices':[{'text':'','finish_reason':'stop'}]}]
+  content=request['messages'][0]['content']
+  answer='1' if 'PARus fixture' in content else 'A'
+  events=[{'choices':[{'delta':{'content':answer},'finish_reason':None}]}, {'timings':{'prompt_n':7,'predicted_n':1,'prompt_ms':2.5,'predicted_ms':1.5},'choices':[{'delta':{'content':''},'finish_reason':'stop'}]}]
   for e in events: self.wfile.write(('data: '+json.dumps(e)+'\\n\\n').encode()); self.wfile.flush()
   self.wfile.write(b'data: [DONE]\\n\\n'); self.wfile.flush()
  def log_message(self,*args): pass

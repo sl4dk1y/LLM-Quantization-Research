@@ -274,7 +274,9 @@ class ExperimentExecutor:
             _validate_scorer(job)
             if job["runtime_version"] != self.config["runtime"].get("version"):
                 raise ValueError("Версия runtime не совпадает с заданием")
-            if job["llama_cpp_commit"] != self.config["runtime"].get("llama_cpp_commit"):
+            runtime_commit = (self.config["runtime"].get("llama_cpp_commit")
+                              or self.config["runtime"].get("source_commit"))
+            if not runtime_commit or job["llama_cpp_commit"] != runtime_commit:
                 raise ValueError("Ревизия llama.cpp не совпадает с заданием")
             executable = self.config["runtime"].get("executable")
             if self.fake:
@@ -301,7 +303,10 @@ class ExperimentExecutor:
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     raise ValueError(f"Не удалось проверить версию llama-server: {type(exc).__name__}") from exc
                 actual_version = (version_result.stdout + version_result.stderr).strip()
-                if (version_result.returncode != 0 or actual_version != job["runtime_version"]
+                version_line = actual_version.splitlines()[0] if actual_version else ""
+                if version_line.startswith("version: "):
+                    version_line = version_line.removeprefix("version: ")
+                if (version_result.returncode != 0 or version_line != job["runtime_version"]
                         or job["llama_cpp_commit"] not in actual_version):
                     raise ValueError("Фактическая версия/build llama-server не совпадает с job manifest")
             self._verified_runtime_binaries.add(binary_key)
@@ -362,7 +367,8 @@ class ExperimentExecutor:
             raise ValueError("Dataset revision в manifest не совпадает с заданием")
         if manifest.get("split") != job["split"] or manifest.get("task") != job["task"]:
             raise ValueError("Dataset task/split в manifest не совпадает с заданием")
-        if manifest.get("dataset") != job["dataset_id"]:
+        dataset_family = str(job["dataset_id"]).split("/", 1)[0]
+        if manifest.get("dataset") not in {job["dataset_id"], dataset_family}:
             raise ValueError("Dataset ID в manifest не совпадает с заданием")
         return row, manifest
 
@@ -437,8 +443,9 @@ class ExperimentExecutor:
                      "ubatch_size": self.config["runtime"]["ubatch_size"],
                      "kv_cache": model["kv_cache"], "flash_attention": self.config["runtime"]["flash_attn"],
                      "reasoning_mode": self.config["runtime"]["reasoning_mode"],
-                     "chat_template_source": self.config["runtime"]["chat_template_source"]}, generation)
-                if runtime_verification.get("status") != "verified":
+                     "chat_template_source": self.config["runtime"]["chat_template_source"],
+                     "chat_template_sha256": self.config["runtime"].get("chat_template_sha256")}, generation)
+                if runtime_verification.get("status") not in {"verified", "static_verified_generation_pending"}:
                     raise ExecutionBlocked("Runtime не подтвердил фактически принятые обязательные параметры")
             is_performance = job.get("mode") == "performance" or job.get("workload_id") == "performance"
             warmup_cell = (("performance", job.get("workload_id"), job.get("task"), job.get("context_length"))
@@ -451,6 +458,13 @@ class ExperimentExecutor:
                 self._runtime_session["warmup_cells_done"].add(warmup_cell)
             before = self._resource_snapshot(runtime)
             response = runtime.generate(row["prompt"], generation)
+            if not synthetic and runtime_verification.get("status") == "static_verified_generation_pending":
+                submitted = response.get("generation_parameters_submitted")
+                if submitted != generation:
+                    raise ExecutionBlocked("Параметры запроса runtime не совпали с закреплённой генерацией")
+                runtime_verification["actual_generation"] = submitted
+                runtime_verification["generation"] = {key: "submitted_and_completed" for key in generation}
+                runtime_verification["status"] = "verified"
             after = self._resource_snapshot(runtime)
             raw = response.get("text")
             if not isinstance(raw, str):

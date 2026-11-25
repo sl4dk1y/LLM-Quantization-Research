@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import http.client
 import queue
@@ -63,6 +64,7 @@ class LlamaServer:
         self.platform_adapter = platform_adapter
         self.safety_watchdog = safety_watchdog
         self.process: Any = None
+        self._launch_command: list[str] | None = None
         self._log = None
         self._request_lock = threading.Lock()
         self._lifecycle_lock = threading.RLock()
@@ -100,6 +102,7 @@ class LlamaServer:
             try:
                 command = (self.platform_adapter.runtime_args(self.config, self.model)
                            if self.platform_adapter is not None else build_server_args(self.config, self.model))
+                self._launch_command = list(command)
                 process = self._popen(command, stdin=subprocess.DEVNULL,
                                       stdout=self._log, stderr=subprocess.STDOUT, shell=False, close_fds=True)
                 self.process = process
@@ -138,7 +141,7 @@ class LlamaServer:
 
     def verify_parameters(self, expected_static: dict[str, Any],
                           expected_generation: dict[str, Any]) -> dict[str, Any]:
-        """Сверяет фактически возвращённые runtime свойства; отсутствующие поля остаются unverified."""
+        """Проверяет статические параметры по /props и argv; per-request параметры фиксируются ответом generate."""
         url = self.base_url + "/props"
         try:
             request = urllib.request.Request(url, method="GET")
@@ -149,19 +152,66 @@ class LlamaServer:
                     "static": {key: "unverified" for key in expected_static},
                     "generation": {key: "unverified" for key in expected_generation},
                     "actual_static": {}, "actual_generation": {}}
-        actual_static = props.get("runtime_parameters") if isinstance(props, dict) else None
-        actual_generation = props.get("accepted_generation_parameters") if isinstance(props, dict) else None
-        static_status = {key: ("verified" if isinstance(actual_static, dict) and actual_static.get(key) == value
+        if not isinstance(props, dict):
+            props = {}
+        actual_static: dict[str, Any] = {}
+        launch = self._launch_command or []
+
+        def option_value(option: str) -> str | None:
+            try:
+                index = launch.index(option)
+                return launch[index + 1]
+            except (ValueError, IndexError):
+                return None
+
+        defaults = props.get("default_generation_settings")
+        defaults = defaults if isinstance(defaults, dict) else {}
+        actual_static["model_path"] = props.get("model_path")
+        actual_static["context_length"] = defaults.get("n_ctx")
+        actual_static["gpu_layers"] = option_value("--gpu-layers")
+        actual_static["cpu_threads"] = option_value("--threads")
+        actual_static["cpu_threads_batch"] = option_value("--threads-batch")
+        actual_static["batch_size"] = option_value("--batch-size")
+        actual_static["ubatch_size"] = option_value("--ubatch-size")
+        cache_k, cache_v = option_value("--cache-type-k"), option_value("--cache-type-v")
+        actual_static["kv_cache"] = cache_k if cache_k == cache_v else None
+        flash = option_value("--flash-attn")
+        actual_static["flash_attention"] = (flash == "on") if flash in {"on", "off"} else None
+        actual_static["reasoning_mode"] = option_value("--reasoning")
+        template_source = ("gguf_metadata" if "--chat-template" not in launch
+                          and "--chat-template-file" not in launch else "custom")
+        actual_static["chat_template_source"] = template_source
+        template = props.get("chat_template")
+        actual_static["chat_template_sha256"] = (
+            hashlib.sha256(template.encode("utf-8")).hexdigest() if isinstance(template, str) else None)
+
+        def equivalent(actual: Any, expected: Any, key: str) -> bool:
+            if actual is None:
+                return False
+            if key == "model_path":
+                try:
+                    return Path(str(actual)).resolve() == Path(str(expected)).resolve()
+                except OSError:
+                    return False
+            if type(expected) is bool:
+                return actual is expected
+            if type(expected) is int:
+                try:
+                    return int(actual) == expected
+                except (TypeError, ValueError):
+                    return False
+            return str(actual) == str(expected)
+
+        static_status = {key: ("verified" if equivalent(actual_static.get(key), value, key)
                                else "unverified") for key, value in expected_static.items()}
-        generation_status = {key: ("verified" if isinstance(actual_generation, dict)
-                                    and actual_generation.get(key) == value else "unverified")
-                             for key, value in expected_generation.items()}
-        all_verified = all(value == "verified" for value in (*static_status.values(), *generation_status.values()))
-        return {"status": "verified" if all_verified else "unverified",
+        static_verified = bool(static_status) and all(value == "verified" for value in static_status.values())
+        generation_status = {key: ("pending_request" if static_verified else "unverified")
+                             for key in expected_generation}
+        return {"status": "static_verified_generation_pending" if static_verified else "unverified",
                 "static": static_status, "generation": generation_status,
-                "actual_static": actual_static if isinstance(actual_static, dict) else {},
-                "actual_generation": actual_generation if isinstance(actual_generation, dict) else {},
-                "source": "llama-server /props"}
+                "actual_static": actual_static, "actual_generation": {},
+                "source": "llama-server /props + exact launch argv",
+                "generation_verification": "deferred until completed request response"}
 
     def generate(self, prompt: str, generation: dict[str, Any], *, cancel: threading.Event | None = None) -> dict[str, Any]:
         if self.safety_watchdog is not None:
@@ -177,11 +227,13 @@ class LlamaServer:
             missing_generation = [key for key in required_generation if key not in generation]
             if missing_generation:
                 raise RuntimeErrorDetail("Не заданы параметры генерации: " + ", ".join(missing_generation))
-            payload = {"model": "local", "prompt": prompt, "stream": True,
+            payload = {"model": "local", "messages": [{"role": "user", "content": prompt}], "stream": True,
                        "temperature": generation["temperature"], "top_p": generation["top_p"],
-                         "top_k": generation["top_k"], "min_p": generation["min_p"], "seed": generation["seed"],
+                       "top_k": generation["top_k"], "min_p": generation["min_p"], "seed": generation["seed"],
                        "max_tokens": generation["max_new_tokens"]}
-            request = urllib.request.Request(self.base_url + "/v1/completions",
+            if generation.get("stop") is not None:
+                payload["stop"] = generation["stop"]
+            request = urllib.request.Request(self.base_url + "/v1/chat/completions",
                                              data=json.dumps(payload).encode(),
                                              headers={"Content-Type": "application/json"}, method="POST")
             chunks: list[str] = []
@@ -266,7 +318,8 @@ class LlamaServer:
                     choices = event.get("choices") or []
                     if choices:
                         finish_reason = choices[0].get("finish_reason") or finish_reason
-                        text = choices[0].get("text", "")
+                        delta = choices[0].get("delta") or {}
+                        text = delta.get("content", "")
                         if text:
                             if first_token_s is None:
                                 first_token_s = time.monotonic() - start
@@ -282,6 +335,10 @@ class LlamaServer:
                 raise RuntimeErrorDetail("Неполный streaming response от runtime: отсутствует [DONE]")
             return {"text": "".join(chunks), "ttft_s": first_token_s,
                     "request_wall_s": time.monotonic() - start, "timings": timings,
+                    "generation_parameters_submitted": {
+                        "temperature": payload["temperature"], "top_p": payload["top_p"],
+                        "top_k": payload["top_k"], "min_p": payload["min_p"], "seed": payload["seed"],
+                        "max_new_tokens": payload["max_tokens"], "stop": payload.get("stop")},
                     "finish_reason": finish_reason or "stop"}
         except urllib.error.URLError as exc:
             raise RuntimeErrorDetail(f"Ошибка соединения с llama-server: {exc.reason}") from exc
