@@ -107,6 +107,7 @@ def run_queue(jobs: Iterable[dict[str, Any]], *, run_dir: str | Path,
               owner_authorized: bool = False,
               safety_check: Callable[[dict[str, Any]], None] = lambda _job: None,
               max_runtime_s: float | None = None,
+              max_new_observations: int | None = None,
               retryable_error: Callable[[Exception], bool] = lambda exc: isinstance(
                   exc, (TimeoutError, ConnectionError, OSError)),
               stop_requested: Callable[[], bool] = lambda: False,
@@ -119,6 +120,9 @@ def run_queue(jobs: Iterable[dict[str, Any]], *, run_dir: str | Path,
         raise PermissionError("Очередь исполнения закрыта без явного разрешения владельца")
     if max_runtime_s is not None and max_runtime_s <= 0:
         raise ValueError("max_runtime_s должен быть положительным")
+    if max_new_observations is not None and (
+            type(max_new_observations) is not int or max_new_observations < 1):
+        raise ValueError("max_new_observations должен быть положительным целым числом")
     job_list = [dict(job) for job in jobs]
     if not platform_id or any(job.get("platform_id") != platform_id for job in job_list):
         raise ValueError("Job manifest должен состоять из одной совпадающей локальной platform_id")
@@ -144,6 +148,8 @@ def run_queue(jobs: Iterable[dict[str, Any]], *, run_dir: str | Path,
             if row.get("status") == "failed" and row.get("observation_id"):
                 failed_counts[row["observation_id"]] = failed_counts.get(row["observation_id"], 0) + 1
         ordered = order_jobs(job_list, start_block=start_block, completed=done)
+        if max_new_observations is not None:
+            ordered = ordered[:max_new_observations]
         wall_start = time.monotonic()
         for index, job in enumerate(ordered):
             if stop_requested():

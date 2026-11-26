@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
         item.add_argument("--right-platform")
         item.add_argument("--authorization-file")
         item.add_argument("--max-runtime", type=float)
+        if command in {"run", "resume"}:
+            item.add_argument("--max-new-observations", type=int,
+                              help="ограничить число новых заданий за один запуск runtime")
         if command in {"slice", "compare", "merge"}:
             item.add_argument("--analysis-stage", choices=("pilot", "confirmatory", "descriptive"),
                               default="confirmatory")
@@ -193,7 +196,8 @@ def main(argv: list[str] | None = None) -> int:
             executor = ExperimentExecutor(config=config, manifest=manifest, platform_adapter=MacOSAdapter(),
                                           run_dir=args.run_dir)
             result = executor.run_production(authorization_file=args.authorization_file,
-                                             start_block=args.start_block, max_runtime_s=args.max_runtime)
+                                             start_block=args.start_block, max_runtime_s=args.max_runtime,
+                                             max_new_observations=args.max_new_observations)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         if args.command == "fake-run":

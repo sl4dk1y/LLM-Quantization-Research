@@ -54,6 +54,39 @@ def test_queue_resume_skips_completed_observations_and_caps_retries(tmp_path):
     assert resumed["completed_jobs"] == 2
 
 
+def test_resume_limits_new_observations_after_skipping_completed_ids(tmp_path):
+    selected = jobs()[:2] * 3
+    selected = [{**job, "job_id": f"job-{index}", "observation_id": f"obs-{index}"}
+                for index, job in enumerate(selected)]
+    first = run_queue(selected, run_dir=tmp_path, execute=lambda _job: {},
+                      preflight=lambda: None, platform_id="metal", owner_authorized=True,
+                      max_new_observations=1)
+    assert first["completed_jobs"] == 1
+
+    called = []
+    second = run_queue(selected, run_dir=tmp_path,
+                       execute=lambda job: called.append(job["observation_id"]) or {},
+                       preflight=lambda: None, platform_id="metal", owner_authorized=True,
+                       max_new_observations=2)
+    assert called == ["obs-1", "obs-2"]
+    assert second["completed_jobs"] == 3
+
+    called.clear()
+    third = run_queue(selected, run_dir=tmp_path,
+                      execute=lambda job: called.append(job["observation_id"]) or {},
+                      preflight=lambda: None, platform_id="metal", owner_authorized=True,
+                      max_new_observations=2)
+    assert called == ["obs-3", "obs-4"]
+    assert third["completed_jobs"] == 5
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, 1.5])
+def test_run_queue_rejects_invalid_new_observation_limit(tmp_path, limit):
+    with pytest.raises(ValueError, match="max_new_observations"):
+        run_queue(jobs()[:1], run_dir=tmp_path, execute=lambda _job: {}, preflight=lambda: None,
+                  platform_id="metal", owner_authorized=True, max_new_observations=limit)
+
+
 def test_run_queue_stops_between_observations_and_lock_prevents_second_runner(tmp_path):
     events = []
     with QueueLock(tmp_path / "orchestrator.lock"):

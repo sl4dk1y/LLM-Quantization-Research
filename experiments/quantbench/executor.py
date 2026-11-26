@@ -198,6 +198,18 @@ def _validate_scorer(job: dict[str, Any]) -> None:
         raise ValueError(f"Неизвестный dataset_id: {dataset_id}")
 
 
+def _generation_config_allowed(configured: Any, requested: Any) -> bool:
+    """Allow task-specific output caps under the campaign's configured ceiling."""
+    if not isinstance(configured, dict) or not isinstance(requested, dict) or set(configured) != set(requested):
+        return False
+    ceiling = configured.get("max_new_tokens")
+    requested_cap = requested.get("max_new_tokens")
+    if (type(ceiling) is not int or ceiling < 1 or type(requested_cap) is not int
+            or not 1 <= requested_cap <= ceiling):
+        return False
+    return all(configured[key] == requested[key] for key in configured if key != "max_new_tokens")
+
+
 def _runtime_metrics(response: dict[str, Any], row: dict[str, Any]) -> dict[str, Any]:
     timings = response.get("timings") if isinstance(response.get("timings"), dict) else {}
     prompt_eval_tokens = timings.get("prompt_n")
@@ -292,7 +304,7 @@ class ExperimentExecutor:
                     raise ValueError("Chat template SHA-256 не подтверждён runtime конфигурацией")
                 if job["context_length"] not in self.config.get("contexts", []):
                     raise ValueError("Context length задания не включён в конфигурацию")
-                if self.config.get("generation") != job["generation_config"]:
+                if not _generation_config_allowed(self.config.get("generation"), job["generation_config"]):
                     raise ValueError("Параметры генерации отличаются от утверждённой конфигурации")
                 continue
             executable_path = Path(executable)
@@ -321,7 +333,7 @@ class ExperimentExecutor:
                 raise ValueError("Chat template SHA-256 не подтверждён runtime конфигурацией")
             if job["context_length"] not in self.config.get("contexts", []):
                 raise ValueError("Context length задания не включён в конфигурацию")
-            if self.config.get("generation") != job["generation_config"]:
+            if not _generation_config_allowed(self.config.get("generation"), job["generation_config"]):
                 raise ValueError("Параметры генерации отличаются от утверждённой конфигурации")
 
     def _load_dataset(self, job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -416,7 +428,7 @@ class ExperimentExecutor:
         session_key = digest({key: job.get(key) for key in (
             "block_id", "platform_id", "model_id", "model_revision", "gguf_sha256", "quantization",
             "kv_cache", "context_length", "runtime_version", "runtime_binary_sha256", "llama_cpp_commit",
-            "generation_config", "tokenizer_revision", "chat_template_hash", "reasoning_mode")})
+              "tokenizer_revision", "chat_template_hash", "reasoning_mode")})
         if self._runtime_session is not None and self._runtime_session["key"] != session_key:
             self._close_runtime_session()
         if self._runtime_session is None:
@@ -579,7 +591,8 @@ class ExperimentExecutor:
                 for name, metric in metrics.items()}
 
     def run_production(self, *, authorization_file: str | Path | None = None,
-                       start_block: str | None = None, max_runtime_s: float | None = None) -> dict[str, Any]:
+                       start_block: str | None = None, max_runtime_s: float | None = None,
+                       max_new_observations: int | None = None) -> dict[str, Any]:
         verify_owner_authorization(authorization_file, plan_hash=self.plan_hash, platform_id=self.platform_id)
         self._production_preflight()
         if not REAL_EXECUTION_ENABLED:
@@ -597,6 +610,7 @@ class ExperimentExecutor:
             return run_queue(self.jobs, run_dir=self.run_dir, platform_id=self.platform_id,
                              owner_authorized=True, max_attempts=attempt_limits.pop(), start_block=start_block,
                              max_runtime_s=max_runtime_s,
+                               max_new_observations=max_new_observations,
                              preflight=lambda: self._production_preflight(),
                              execute=lambda job: self._execute_job(job, synthetic=False),
                              safety_check=lambda job: self._safety_precheck(job),

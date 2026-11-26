@@ -287,8 +287,12 @@ def test_compatible_jobs_reuse_one_runtime_and_truncated_output_fails_score(tmp_
     config, manifest, adapter, _ = _fixture(tmp_path)
     config["repeats"]["warmup"] = 2
     job = manifest["jobs"][0]
+    job["generation_config"] = copy.deepcopy(job["generation_config"])
     second = copy.deepcopy(job)
     second.update({"job_id": "job-2", "observation_id": "obs-" + digest("second-item")})
+    second["generation_config"] = {**second["generation_config"], "max_new_tokens":
+                                   second["generation_config"]["max_new_tokens"] + 1}
+    config["generation"]["max_new_tokens"] = second["generation_config"]["max_new_tokens"]
     manifest["jobs"].append(second)
     manifest["job_count"] = 2
     manifest["job_plan_hash"] = digest(manifest["jobs"])
@@ -315,14 +319,27 @@ def test_compatible_jobs_reuse_one_runtime_and_truncated_output_fails_score(tmp_
     executor = ExperimentExecutor(config=config, manifest=manifest, platform_adapter=adapter,
                                   run_dir=tmp_path / "reuse", fake=True,
                                   runtime_factory=lambda _job, _model: runtime)
-    result = executor.run_fake()
-    rows = [json.loads(line) for line in (tmp_path / "reuse" / "observations.jsonl").read_text().splitlines()]
-    assert result["completed_jobs"] == 2
+    executor.validate_inputs()
+    first = executor._execute_job(job, synthetic=True)
+    second_row = executor._execute_job(second, synthetic=True)
+    executor._close_runtime_session()
     assert (runtime.starts, runtime.stops) == (1, 1)
     assert runtime.calls == 4  # два прогрева на блок и два quality items
-    assert all(row["raw_model_output"] == "A" and row["truncated"] is True for row in rows)
-    assert all(row["finish_reason"] == "length" and row["score"]["exact_match"] == 0 for row in rows)
-    assert all(row["score"]["truncation_rejected"] is True for row in rows)
+    assert all(row["raw_model_output"] == "A" and row["truncated"] is True for row in (first, second_row))
+    assert all(row["finish_reason"] == "length" and row["score"]["exact_match"] == 0
+               for row in (first, second_row))
+    assert all(row["score"]["truncation_rejected"] is True for row in (first, second_row))
+
+
+def test_validate_inputs_rejects_task_output_cap_above_configured_limit(tmp_path):
+    config, manifest, adapter, _ = _fixture(tmp_path)
+    manifest["jobs"][0]["generation_config"] = copy.deepcopy(manifest["jobs"][0]["generation_config"])
+    manifest["jobs"][0]["generation_config"]["max_new_tokens"] += 1
+    manifest["job_plan_hash"] = digest(manifest["jobs"])
+    executor = ExperimentExecutor(config=config, manifest=manifest, platform_adapter=adapter,
+                                  run_dir=tmp_path / "too-many-tokens", fake=True)
+    with pytest.raises(ValueError, match="Параметры генерации отличаются"):
+        executor.validate_inputs()
 
 
 def test_production_requires_owner_file_and_stays_closed_after_matching_authorization(tmp_path):
