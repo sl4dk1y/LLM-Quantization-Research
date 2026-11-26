@@ -110,12 +110,12 @@ def validate_config(config: Any) -> None:
         raise ValueError("runtime.port должен быть в диапазоне 1..65535")
     if config["runtime"]["load_timeout_s"] > 300 or config["runtime"]["request_timeout_s"] > 600:
         raise ValueError("Тайм-ауты runtime не могут превышать предварительные пределы протокола")
-    for key in ("temperature", "top_p"):
+    for key in ("temperature", "top_p", "min_p"):
         if key in config["generation"] and (type(config["generation"][key]) not in {int, float} or not 0 <= config["generation"][key] <= 1):
             raise ValueError(f"generation.{key} должен быть числом 0..1")
     if "max_new_tokens" in config["generation"] and (type(config["generation"]["max_new_tokens"]) is not int or config["generation"]["max_new_tokens"] < 1):
         raise ValueError("generation.max_new_tokens должен быть положительным целым числом")
-    generation_required = ("temperature", "top_p", "top_k", "seed", "max_new_tokens")
+    generation_required = ("temperature", "top_p", "top_k", "min_p", "seed", "max_new_tokens")
     missing_generation = [key for key in generation_required if key not in config["generation"]]
     if missing_generation:
         raise ValueError("generation: не заданы параметры: " + ", ".join(missing_generation))

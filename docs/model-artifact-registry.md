@@ -44,7 +44,7 @@ MODEL_DIR="/path/to/approved/model-cache"
 mkdir -p "$MODEL_DIR"
 MODEL_REV="2f3b082b1356a6123f7ed71e65aea340da25d53c"
 curl -fL -C - "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/$MODEL_REV/Qwen3-4B-Q4_K_M.gguf" -o "$MODEL_DIR/Qwen3-4B-Q4_K_M.gguf"
-shasum -a 256 "$MODEL_DIR/Qwen3-4B-Q4_K_M.gguf"
+printf '%s  %s\n' 'ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328' "$MODEL_DIR/Qwen3-4B-Q4_K_M.gguf" | shasum -a 256 -c -
 ```
 
 После проверки P0 и отдельного допуска к P1:
@@ -52,7 +52,8 @@ shasum -a 256 "$MODEL_DIR/Qwen3-4B-Q4_K_M.gguf"
 ```bash
 curl -fL -C - "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/$MODEL_REV/Qwen3-4B-f16.gguf" -o "$MODEL_DIR/Qwen3-4B-f16.gguf"
 curl -fL -C - "https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/$MODEL_REV/Qwen3-4B-Q8_0.gguf" -o "$MODEL_DIR/Qwen3-4B-Q8_0.gguf"
-shasum -a 256 "$MODEL_DIR/Qwen3-4B-f16.gguf" "$MODEL_DIR/Qwen3-4B-Q8_0.gguf"
+printf '%s  %s\n' '086aef7ff71d2463d3eaf333b9df7f90914957cb3d78cb46dfd642425bbe4674' "$MODEL_DIR/Qwen3-4B-f16.gguf" | shasum -a 256 -c -
+printf '%s  %s\n' '865fbdcb8119c5cd5ba557b139d49351aa2c4e33bf93bdd7b08e24b573dd1dd4' "$MODEL_DIR/Qwen3-4B-Q8_0.gguf" | shasum -a 256 -c -
 ```
 
 Эти команды подготовлены, но не запускались. Ни одна из двух машин пока не имеет закреплённого согласованного GGUF набора.

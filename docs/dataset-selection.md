@@ -2,7 +2,7 @@
 
 **Дата среза:** 24 ноября 2026 года.
 
-**Статус:** короткий список M1 дополнен проектным выбором M2; документы и данные не скачивались, protocol ещё не утверждён.
+**Статус:** закреплённые источники MERA/LIBRA и task files получены и проверены; protocol M2.1 ещё требует утверждения владельцем.
 
 ## Критерии
 
@@ -17,23 +17,21 @@
 
 ## Конкретный выбор M2: dataset revision, split и оценка
 
-Следующая таблица закрепляет кандидатный split и его роль. Полные commit SHA-40 сверены по официальной истории Hub; до data export в M3 требуется сохранить SHA-256 фактически полученных файлов и повторно проверить размеры выборок. Количество задач в benchmark card и размер выбранной выборки — разные величины.
+Следующая таблица фиксирует split и его роль после проверки pinned файлов в M3.3.1. Для каждого исходного файла сохранены SHA-256 и фактические counts; число задач в benchmark card и размер выбранной выборки — разные величины.
 
 | Dataset source/revision | Split / доступный объём | M2 роль / выбранное `n` | Task metric | License / доступ |
 | --- | --- | --- | --- | --- |
-| MERA v1.2.0, `MERA-evaluation/MERA`, `15c0e5b8e27551b50aa27f5497074810c8740661` | MathLogicQA train 680, test 1,143 | Train 100 для выбора; test 200 held-out | Accuracy | MIT в card; публичные train/test labels |
-| MERA v1.2.0, та же ревизия | ruOpenBookQA train 2,338, test 400 | Train 100 для выбора; test 200 held-out | Accuracy primary, macro-F1 secondary | MIT в card; задача переведена с английской OpenBookQA и вручную проверена |
-| MERA v1.2.0, та же ревизия | MultiQ train 1,056, test 900 | Test 200; task holdout, не используется для выбора | Token-F1 primary, EM secondary | MIT в card; QA основан на Wikipedia/Wikidata-derived TAPE data |
-| MERA v1.2.0, та же ревизия | PARus train 400, dev 100, закрытый test 500 | Все 100 dev как task holdout; private test не использовать локально | Accuracy | MIT в card; основан на Russian SuperGLUE/COPA lineage |
-| LIBRA текущая версия май 2026, `ai-forever/LIBRA`, `10d668ab44165bbab73ce806aa536294abedc1ba` | `ru_babilong_qa3`: 60/68/69 на 4K/8K/16K; `long_context_multiq`: 158/121/83; `matreshka_names`: 150/150/145 | По 30 из каждой task × length ячейки, одинаковые item IDs для моделей | Официальный Exact Match с положительными эталонами | MIT в card; открытый benchmark; риск загрязнения pretraining не устранён |
+| MERA v1.2.0, `MERA-evaluation/MERA`, `15c0e5b8e27551b50aa27f5497074810c8740661` | MathLogicQA: train 680 (680 labels), test 1,143 (0); MultiQ: train 1,056 (1,056), test 900 (0). Поля и pinned JSONL hashes проверены | Train: 100 development, 20 P0, один fixed shot, 200 локальный held-out; это не official test | Task-native Accuracy/EM | MIT в pinned card; official test answers withheld |
+| MERA v1.2.0, та же ревизия | ruOpenBookQA: train 2,338 (2,338 labels), test 400 (0); PARus: train 400, dev 100 (100 labels), test 500 (0) | ruOpenBookQA: 100 development, 20 P0, один fixed shot, 200 локальный held-out; PARus: все 100 dev, shot из train | Accuracy, ruOpenBookQA macro-F1 | MIT в pinned card; official test answers withheld |
+| LIBRA, `ai-forever/LIBRA`, `10d668ab44165bbab73ce806aa536294abedc1ba` | Pinned parquet: `ru_babilong_qa3` 723 (4K 69/8K 68/16K 69); `long_context_multiq` 512 (150/158/121); `matreshka_names` 640 (150/150/145). Есть `positive_outputs`, отдельного ID нет | По 30 каждой из 9 task × length cells; стабильный ID от revision, исходного индекса и hash записи | Official lemmatized substring EM | MIT в pinned card; открытый benchmark, риск загрязнения pretraining остаётся |
 
-Для воспроизводимого subset применяется hash order от `seed|full dataset revision|task|split|item_id`, seed `20261124`. Список выбранных IDs и его SHA-256 сохраняется до генерации. Значения размеров выше подтверждаются текущими карточками Hub, а не измерениями проекта; перед data export их следует сверить с закреплёнными ревизиями.
+Для воспроизводимого subset применяется hash order от `seed|full dataset revision|task|split|item_id`, seed `20261124`. Список выбранных IDs и его SHA-256 сохраняется до генерации. Pinned MERA test files проверялись только на схему и наличие labels; предсказаний на них не получено. Так как `outputs` пусты, локальный P1 берётся из открытого размеченного train и явно называется `local_heldout`.
 
 ### Split, selection и загрязнение
 
-Выбор модели/quant использует лишь MERA train подвыборки MathLogicQA и ruOpenBookQA. Held-out MathLogicQA/ruOpenBookQA проверяют перенос на новые item той же задачи. MultiQ test, PARus dev и LIBRA проверяют перенос к новым task types/context; ни один из этих score не должен влиять на выбор. PARus Hub card обозначает 500 test примеров как private; поэтому локальная оценка их ответов в протокол не включена. При желании официальный scoring может быть предложен отдельно, но не меняет локальные выборки.
+Выбор модели/quant использует только MERA train development подвыборки MathLogicQA и ruOpenBookQA. Held-out MathLogicQA, MultiQ и ruOpenBookQA формируются из открытого train без пересечения с development и fixed few-shot примерами. PARus использует размеченный dev; private test локально не оценивается. Локальные held-out показатели не являются leaderboard результатами.
 
-Публичные задачи MERA/LIBRA могли быть доступны в pretraining corpus или на web; точного отсутствия contamination для checkpoint установить нельзя. Holdout защищает от подбора по результату конкретной серии, но не от уже встречавшихся формулировок. Проверка официального MERA scorer и точного answer parser предусмотрена до пилота; до этого локальный parser не считается эквивалентным leaderboard.
+Публичные задачи MERA/LIBRA могли быть доступны в pretraining corpus или на web; точного отсутствия contamination для checkpoint установить нельзя. Holdout защищает от подбора по результату конкретной серии, но не от уже встречавшихся формулировок. Генеративные MERA scorer и task-specific post-processing закреплены на evaluator commit; результаты не эквивалентны закрытому leaderboard test без доступа к его labels.
 
 Для choice labels допускаются только первые отдельные корректные метки `A`–`D` или `1`–`2`; неоднозначный или отсутствующий label считается ошибкой. Для свободного ответа сохраняется исходная строка, scoring делается pinned official evaluator (MERA MultiQ, LIBRA EM). Не задавать собственную normalizer после просмотра outputs. LLM-as-judge не используется. Уточнённая выборка и метрики связаны с [матрицей M2](experiment-matrix.md).
 | **RusConText** — [ACL SRW 2025](https://aclanthology.org/2025.acl-srw.91/) | Аннотация не сообщает общего числа примеров и лицензии; требует проверки полного текста и официального источника данных. | Четыре короткоконтекстные русские задачи: кореференция, дискурс, идиомы, эллипсис. Подробные метрики необходимо брать из методики задачи. | Потенциально автоматизируемая оценка, но точная процедура и соглашения нормализации здесь не установлены. Риск источникового загрязнения неизвестен. | Дополнительный источник, если задача грамматики/дискурса нужна для исследовательского охвата. Не использовать как long-context benchmark; не включать до проверки лицензии, размера и способов оценки. |

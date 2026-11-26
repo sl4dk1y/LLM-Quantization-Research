@@ -1,11 +1,32 @@
 #import <Foundation/Foundation.h>
 #import <libproc.h>
+#import <dispatch/dispatch.h>
 #include <sys/sysctl.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        if (argc == 2 && strcmp(argv[1], "--pressure-watch") == 0) {
+            dispatch_queue_t queue = dispatch_queue_create("quantbench.memory-pressure", DISPATCH_QUEUE_SERIAL);
+            dispatch_source_t source = dispatch_source_create(
+                DISPATCH_SOURCE_TYPE_MEMORYPRESSURE, 0,
+                DISPATCH_MEMORYPRESSURE_NORMAL | DISPATCH_MEMORYPRESSURE_WARN |
+                    DISPATCH_MEMORYPRESSURE_CRITICAL, queue);
+            if (source == NULL) return 3;
+            dispatch_source_set_event_handler(source, ^{
+                unsigned long flags = dispatch_source_get_data(source);
+                const char *state = (flags & DISPATCH_MEMORYPRESSURE_CRITICAL) ? "critical" :
+                                    (flags & DISPATCH_MEMORYPRESSURE_WARN) ? "warning" : "normal";
+                printf("{\"event\":\"%s\"}\n", state);
+                fflush(stdout);
+            });
+            dispatch_resume(source);
+            dispatch_main();
+            return 0;
+        }
         if (argc != 2) {
             fprintf(stderr, "usage: macos_metrics PID\n");
             return 2;

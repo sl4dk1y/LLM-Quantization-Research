@@ -35,6 +35,8 @@ Apple описывает `phys_footprint` как полезную для оце�
 - `decode tok/s = eval_count / eval_duration`;
 - `latency_total` — монотонное время от отправки запроса до последнего chunk/EOS.
 
+Для llama.cpp server timings `prompt_n` — число prompt-токенов, обработанных в этом запросе, `cache_n` — число prompt-токенов, повторно использованных из prefix cache. Их сумма — полный prompt: сохранять её как `prompt_tokens`, а `prompt_eval_tokens` и `cached_prompt_tokens` оставлять отдельными. Если `cache_n` отсутствует, полный `prompt_tokens` не вычислять из предположения о нулевом cache. `prompt_ms` и prefill throughput относятся к обработанной части prompt; decode throughput вычисляется только как `predicted_n / predicted_ms`. `TTFT` — клиентское время до первого токенного chunk и включает влияние cache; при сравнении сохранять и отдельно учитывать `cache_n`.
+
 Учитывать server start/load отдельно от TTFT и request latency. В отчёте публиковать медиану и IQR; для perf повторов — также p95 и bootstrap CI. Нулевой, отрицательный или отсутствующий denominator/timing не исправляется эвристикой, а отмечается как невалидное наблюдение.
 
 ## Условия измерений

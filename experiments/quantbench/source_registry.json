@@ -1,0 +1,599 @@
+{
+  "artifacts": [
+    {
+      "bytes": 756282,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/mathlogicqa/test.jsonl",
+      "path": "data/mathlogicqa/test.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "a4d8f86bc315d694e27b4ee6f15803830c265effa8c3bc16211cecd5ba638c94"
+    },
+    {
+      "bytes": 473776,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/mathlogicqa/train.jsonl",
+      "path": "data/mathlogicqa/train.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "4c759341e99e3624f5b9ea8b991e7dfedf8b74d0039be028ead8979b2c180c83"
+    },
+    {
+      "bytes": 3283022,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/multiq/test.jsonl",
+      "path": "data/multiq/test.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "7df2fa31fe677aec5ff8cb8e0ba804e7d3b3d3a0f830c7147ae111410265f72d"
+    },
+    {
+      "bytes": 2867485,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/multiq/train.jsonl",
+      "path": "data/multiq/train.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "7e7b82b589fcc4c96535ee7bb36a211c8299efe2092a16fadc799e04f2536755"
+    },
+    {
+      "bytes": 66477,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/parus/dev.jsonl",
+      "path": "data/parus/dev.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "eca486514f2adee015553c0f94f2ec1aace44ed8d4e607a18d08056d6d1fbe3e"
+    },
+    {
+      "bytes": 327768,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/parus/test.jsonl",
+      "path": "data/parus/test.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "ca07d97a6b6d3bf7b7e2397de88d701563e99b94bbf50a7753321df092cb1a47"
+    },
+    {
+      "bytes": 262645,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/parus/train.jsonl",
+      "path": "data/parus/train.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "487ddc4fb7bb5c124dcd8754bf14bf1f7ebf08882411bca1456b7ab81b742a9e"
+    },
+    {
+      "bytes": 280492,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/ruopenbookqa/test.jsonl",
+      "path": "data/ruopenbookqa/test.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "742c2a825830c6cd101f5ea609a0cba03d1336d2091aa6b0446c0662259aaebe"
+    },
+    {
+      "bytes": 1588061,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/MERA-evaluation/MERA/data/ruopenbookqa/train.jsonl",
+      "path": "data/ruopenbookqa/train.jsonl",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "dbbcc7227ad7f368b58fd8a802459be8d6d100bf524f9ee5494684574992bb70"
+    },
+    {
+      "bytes": 13053010,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/ai-forever/LIBRA/long_context_multiq/test-00000-of-00001.parquet",
+      "path": "long_context_multiq/test-00000-of-00001.parquet",
+      "repo_id": "ai-forever/LIBRA",
+      "revision": "10d668ab44165bbab73ce806aa536294abedc1ba",
+      "sha256": "4631e22cad4884f7e3a1ce864c788c3cf38802a9647787a5f9dc0d42edd18f59"
+    },
+    {
+      "bytes": 13102690,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/ai-forever/LIBRA/matreshka_names/test-00000-of-00001.parquet",
+      "path": "matreshka_names/test-00000-of-00001.parquet",
+      "repo_id": "ai-forever/LIBRA",
+      "revision": "10d668ab44165bbab73ce806aa536294abedc1ba",
+      "sha256": "76d2431b48abdae3b025846516e999e3edcfb628052a4bc5f6aef5cabf4df15d"
+    },
+    {
+      "bytes": 241987840,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/ai-forever/LIBRA/ru_babilong_qa3/test-00000-of-00001.parquet",
+      "path": "ru_babilong_qa3/test-00000-of-00001.parquet",
+      "repo_id": "ai-forever/LIBRA",
+      "revision": "10d668ab44165bbab73ce806aa536294abedc1ba",
+      "sha256": "4b94bec718b3ebba3189121cc55bbc5c836793917aff3e7b7da6ef75c15667fa"
+    },
+    {
+      "bytes": 167649,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/cards/MERA-evaluation/MERA/README.md",
+      "path": "README.md",
+      "repo_id": "MERA-evaluation/MERA",
+      "revision": "15c0e5b8e27551b50aa27f5497074810c8740661",
+      "sha256": "856b2c3d5d63d807075711094f2f8b2fbc30a027aaffbb1da7769509abef4ce4"
+    },
+    {
+      "bytes": 20243,
+      "kind": "hf_dataset",
+      "local_path": "datasets/source/cards/ai-forever/LIBRA/README.md",
+      "path": "README.md",
+      "repo_id": "ai-forever/LIBRA",
+      "revision": "10d668ab44165bbab73ce806aa536294abedc1ba",
+      "sha256": "a837a8e863636f798770ff8fde47d83f713b725f80e893d5823460f18b2ec993"
+    },
+    {
+      "bytes": 726,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-1.7B/config.json",
+      "path": "config.json",
+      "repo_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "sha256": "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197"
+    },
+    {
+      "bytes": 239,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-1.7B/generation_config.json",
+      "path": "generation_config.json",
+      "repo_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    },
+    {
+      "bytes": 1671853,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-1.7B/merges.txt",
+      "path": "merges.txt",
+      "repo_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    },
+    {
+      "bytes": 11422654,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-1.7B/tokenizer.json",
+      "path": "tokenizer.json",
+      "repo_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+      "bytes": 9732,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-1.7B/tokenizer_config.json",
+      "path": "tokenizer_config.json",
+      "repo_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    },
+    {
+      "bytes": 2776833,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-1.7B/vocab.json",
+      "path": "vocab.json",
+      "repo_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    {
+      "bytes": 726,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-4B/config.json",
+      "path": "config.json",
+      "repo_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "sha256": "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a"
+    },
+    {
+      "bytes": 239,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-4B/generation_config.json",
+      "path": "generation_config.json",
+      "repo_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    },
+    {
+      "bytes": 1671853,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-4B/merges.txt",
+      "path": "merges.txt",
+      "repo_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    },
+    {
+      "bytes": 11422654,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-4B/tokenizer.json",
+      "path": "tokenizer.json",
+      "repo_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+      "bytes": 9732,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-4B/tokenizer_config.json",
+      "path": "tokenizer_config.json",
+      "repo_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    },
+    {
+      "bytes": 2776833,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-4B/vocab.json",
+      "path": "vocab.json",
+      "repo_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    {
+      "bytes": 728,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-8B/config.json",
+      "path": "config.json",
+      "repo_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30"
+    },
+    {
+      "bytes": 239,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-8B/generation_config.json",
+      "path": "generation_config.json",
+      "repo_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2"
+    },
+    {
+      "bytes": 1671853,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-8B/merges.txt",
+      "path": "merges.txt",
+      "repo_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    },
+    {
+      "bytes": 11422654,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-8B/tokenizer.json",
+      "path": "tokenizer.json",
+      "repo_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+      "bytes": 9732,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-8B/tokenizer_config.json",
+      "path": "tokenizer_config.json",
+      "repo_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    },
+    {
+      "bytes": 2776833,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3-8B/vocab.json",
+      "path": "vocab.json",
+      "repo_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    {
+      "bytes": 3161,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3.5-4B/config.json",
+      "path": "config.json",
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "sha256": "ddc63e1c717afa86c865bb5e01313d89d72bb53b97ad4a8a03ba8510c0621670"
+    },
+    {
+      "bytes": 3353259,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3.5-4B/merges.txt",
+      "path": "merges.txt",
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "sha256": "a9d356d7bdf1ef4949e3e748e95b8e10ad9d4e2e838eddc38a0a7b6b94d1db8d"
+    },
+    {
+      "bytes": 12807982,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3.5-4B/tokenizer.json",
+      "path": "tokenizer.json",
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
+    },
+    {
+      "bytes": 16710,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3.5-4B/tokenizer_config.json",
+      "path": "tokenizer_config.json",
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "sha256": "316230d6a809701f4db5ea8f8fc862bc3a6f3229c937c174e674ff3ca0a64ac8"
+    },
+    {
+      "bytes": 6722759,
+      "kind": "hf_model",
+      "local_path": "datasets/source/tokenizers/Qwen/Qwen3.5-4B/vocab.json",
+      "path": "vocab.json",
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "sha256": "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"
+    },
+    {
+      "bytes": 1067,
+      "kind": "github",
+      "local_path": "datasets/source/official/EleutherAI/lm-evaluation-harness/LICENSE.md",
+      "path": "LICENSE.md",
+      "repo_id": "EleutherAI/lm-evaluation-harness",
+      "revision": "d6de81643928d653435c431bae19945d41d32520",
+      "sha256": "a806e42547620dffbc2ec0333322c8b3523b4af11e059be14ef81aa5b1ae021f"
+    },
+    {
+      "bytes": 702,
+      "kind": "github",
+      "local_path": "datasets/source/official/EleutherAI/lm-evaluation-harness/lm_eval/tasks/libra/long_context_multiq.yaml",
+      "path": "lm_eval/tasks/libra/long_context_multiq.yaml",
+      "repo_id": "EleutherAI/lm-evaluation-harness",
+      "revision": "d6de81643928d653435c431bae19945d41d32520",
+      "sha256": "9810cd57bd611ef21cb78e1c24b3d18a4030f01ff5c8f5ce5ff9db221f607916"
+    },
+    {
+      "bytes": 805,
+      "kind": "github",
+      "local_path": "datasets/source/official/EleutherAI/lm-evaluation-harness/lm_eval/tasks/libra/matreshka_names.yaml",
+      "path": "lm_eval/tasks/libra/matreshka_names.yaml",
+      "repo_id": "EleutherAI/lm-evaluation-harness",
+      "revision": "d6de81643928d653435c431bae19945d41d32520",
+      "sha256": "594adcfe90368c978f7c0e56d3748522810a57c2470edbebb631ba5af4ce4c75"
+    },
+    {
+      "bytes": 1229,
+      "kind": "github",
+      "local_path": "datasets/source/official/EleutherAI/lm-evaluation-harness/lm_eval/tasks/libra/ru_babilong_qa3.yaml",
+      "path": "lm_eval/tasks/libra/ru_babilong_qa3.yaml",
+      "repo_id": "EleutherAI/lm-evaluation-harness",
+      "revision": "d6de81643928d653435c431bae19945d41d32520",
+      "sha256": "82e9db5b713a1a7ed7dbfe85acfe4848c36792b0e003fb744163536cfb5a6767"
+    },
+    {
+      "bytes": 5864,
+      "kind": "github",
+      "local_path": "datasets/source/official/EleutherAI/lm-evaluation-harness/lm_eval/tasks/libra/utils.py",
+      "path": "lm_eval/tasks/libra/utils.py",
+      "repo_id": "EleutherAI/lm-evaluation-harness",
+      "revision": "d6de81643928d653435c431bae19945d41d32520",
+      "sha256": "4e6c9c2b0f675ff5c47414927f2a68a0e34d4f9189f7744cb2ddd7c4156af0b7"
+    },
+    {
+      "bytes": 158,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/.gitmodules",
+      "path": ".gitmodules",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "f6cfe6daaf5e9fcb83eb09cdc6fe9446932196dec5f7f675db0fc00832cfabf1"
+    },
+    {
+      "bytes": 1067,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/LICENSE",
+      "path": "LICENSE",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "570dbad6dfe2036b2ebdb3e35b402f4f9984b1e514499633126857141d223ab1"
+    },
+    {
+      "bytes": 431,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/custom_generate_task.yaml",
+      "path": "benchmark_tasks/custom_generate_task.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "05aaebc658699a64bb4a84f1f7f40c57f79ecb249fc272e9f0a2b69dfb5ed37d"
+    },
+    {
+      "bytes": 273,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/custom_metrics.py",
+      "path": "benchmark_tasks/custom_metrics.py",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "10702f8b019b96d99e3318476712296245fb302877169605a236c5871bd8466a"
+    },
+    {
+      "bytes": 7391,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/custom_samplers.py",
+      "path": "benchmark_tasks/custom_samplers.py",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "36c8c8dfd0ea35cec6588332755df9836592eba1d6ec2e5f9f06bc9061eaaa90"
+    },
+    {
+      "bytes": 203,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/digit_choice_gen_task.yaml",
+      "path": "benchmark_tasks/digit_choice_gen_task.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "692cb1dd9ee5f9e8b18d56be9f901859fd8dd1a4db2bd40a496f672c030b3f5e"
+    },
+    {
+      "bytes": 204,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/letter_choice_gen_task.yaml",
+      "path": "benchmark_tasks/letter_choice_gen_task.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "ae9b3d5af5968ba3e10dda8f87e74048277a54db7b3fbdd35a7eed3fff348ab0"
+    },
+    {
+      "bytes": 509,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/mathlogicqa/mathlogicqa.yaml",
+      "path": "benchmark_tasks/mathlogicqa/mathlogicqa.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "7bde0f79281f16b55ca26725b0215add2d77fdedaf3df72ced079ed99e1c4b9d"
+    },
+    {
+      "bytes": 142,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/mathlogicqa/mathlogicqa_gen.yaml",
+      "path": "benchmark_tasks/mathlogicqa/mathlogicqa_gen.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "4f55ff912fb5bf131358d6eb85269ab164ac33faee6d15edd963280e4ddc8eff"
+    },
+    {
+      "bytes": 124,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/mathlogicqa/mathlogicqa_gen_localscore.yaml",
+      "path": "benchmark_tasks/mathlogicqa/mathlogicqa_gen_localscore.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "29197244ce0f5b104756ce02b11abe2e00959794ea3d29ca11e4ca6c165b6579"
+    },
+    {
+      "bytes": 523,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/rsg/parus.yaml",
+      "path": "benchmark_tasks/rsg/parus.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "da1461a051c1fb0561da67d4cc9362f89905a9e94f417be32fead894147e2bea"
+    },
+    {
+      "bytes": 129,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/rsg/parus_gen.yaml",
+      "path": "benchmark_tasks/rsg/parus_gen.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "0389da594bb403d1100f60e5cdd538ab987c1957070ccd00728a5464828a8d14"
+    },
+    {
+      "bytes": 112,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/rsg/parus_gen_localscore.yaml",
+      "path": "benchmark_tasks/rsg/parus_gen_localscore.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "ea93a0dbd10b9e0198cf0c129c5bf4b094fea8d05b93ba98176d5b478ce17106"
+    },
+    {
+      "bytes": 683,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/tape/multiq.yaml",
+      "path": "benchmark_tasks/tape/multiq.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "ca642dfee94e9a3867e0548f652ebf408cfabaf1d79d2f1a48ee70413289da1a"
+    },
+    {
+      "bytes": 715,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/tape/ruopenbookqa.yaml",
+      "path": "benchmark_tasks/tape/ruopenbookqa.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "0b6f86d3c310c5760d223660d21e6a9bc57ca60331b8000e85b9e39ffe71bde2"
+    },
+    {
+      "bytes": 373,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/tape/ruopenbookqa_gen.yaml",
+      "path": "benchmark_tasks/tape/ruopenbookqa_gen.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "0c7299752966702421050c8e466daa07b384a4868b4d33356f8068f3f7b27f70"
+    },
+    {
+      "bytes": 126,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/tape/ruopenbookqa_gen_localscore.yaml",
+      "path": "benchmark_tasks/tape/ruopenbookqa_gen_localscore.yaml",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "7ffc19392c3dc97e7952db5c9d8d944844b4c518a56d037997cf98e9eb82bb18"
+    },
+    {
+      "bytes": 807,
+      "kind": "github",
+      "local_path": "datasets/source/official/MERA-Evaluation/MERA/benchmark_tasks/tape/utils.py",
+      "path": "benchmark_tasks/tape/utils.py",
+      "repo_id": "MERA-Evaluation/MERA",
+      "revision": "8698451dd7c281462c684190c9e38d2fae0f6d7a",
+      "sha256": "3ddc49f1adbc7ba407dd6460b9946b7f42c777d05c0d910f1aa2736876c43063"
+    },
+    {
+      "bytes": 1067,
+      "kind": "github",
+      "local_path": "datasets/source/official/artemorloff/lm-evaluation-harness/LICENSE.md",
+      "path": "LICENSE.md",
+      "repo_id": "artemorloff/lm-evaluation-harness",
+      "revision": "d85f735223f11699765e2f5490ee526a3fe1b1e5",
+      "sha256": "a806e42547620dffbc2ec0333322c8b3523b4af11e059be14ef81aa5b1ae021f"
+    },
+    {
+      "bytes": 21530,
+      "kind": "github",
+      "local_path": "datasets/source/official/artemorloff/lm-evaluation-harness/lm_eval/api/metrics.py",
+      "path": "lm_eval/api/metrics.py",
+      "repo_id": "artemorloff/lm-evaluation-harness",
+      "revision": "d85f735223f11699765e2f5490ee526a3fe1b1e5",
+      "sha256": "6e75d8f8a23331f71d393c2a1f76d75520cb9a3bf931f79e26931da4708e7d13"
+    },
+    {
+      "bytes": 10013,
+      "kind": "github",
+      "local_path": "datasets/source/official/artemorloff/lm-evaluation-harness/lm_eval/filters/extraction.py",
+      "path": "lm_eval/filters/extraction.py",
+      "repo_id": "artemorloff/lm-evaluation-harness",
+      "revision": "d85f735223f11699765e2f5490ee526a3fe1b1e5",
+      "sha256": "0ae39f27a93e212438f27d53560c8bfc7a211b3b3a82e592085f0a6bc556d95c"
+    },
+    {
+      "bytes": 2105,
+      "kind": "github",
+      "local_path": "datasets/source/official/artemorloff/lm-evaluation-harness/lm_eval/filters/selection.py",
+      "path": "lm_eval/filters/selection.py",
+      "repo_id": "artemorloff/lm-evaluation-harness",
+      "revision": "d85f735223f11699765e2f5490ee526a3fe1b1e5",
+      "sha256": "5f8264dce91dd1282b84487d703e7e2bb11bef5fd6c93f91b4e51342a4fb76ab"
+    },
+    {
+      "bytes": 4086,
+      "kind": "github",
+      "local_path": "datasets/source/official/artemorloff/lm-evaluation-harness/lm_eval/filters/transformation.py",
+      "path": "lm_eval/filters/transformation.py",
+      "repo_id": "artemorloff/lm-evaluation-harness",
+      "revision": "d85f735223f11699765e2f5490ee526a3fe1b1e5",
+      "sha256": "9003f250cc4dc1a647b604f1816c5531e5a423ee87f11b5168cb91f39dda6d0d"
+    },
+    {
+      "bytes": 5921,
+      "kind": "github",
+      "local_path": "datasets/source/official/artemorloff/lm-evaluation-harness/pyproject.toml",
+      "path": "pyproject.toml",
+      "repo_id": "artemorloff/lm-evaluation-harness",
+      "revision": "d85f735223f11699765e2f5490ee526a3fe1b1e5",
+      "sha256": "1d7ee8c02654c774d5848543569e99bed12d057d3b1bfc8047cd17a557e4eb5f"
+    }
+  ],
+  "manifest_version": 1
+}
